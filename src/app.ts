@@ -18,9 +18,7 @@ type AppDependencies = {
 export function createApp({ config, logger, checkDatabase }: AppDependencies) {
   const app = new OpenAPIHono()
 
-  app.use('*', requestId())
-  app.use('*', secureHeaders())
-  app.use('*', requestLogger(logger))
+  app.use('*', requestId(), secureHeaders(), requestLogger(logger))
 
   app.route('/', createHealthModule({ checkDatabase }))
 
