@@ -4,7 +4,7 @@ const rawConfigSchema = z.object({
   APP_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   HOST: z.string().min(1).default('0.0.0.0'),
-  PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   API_DOCS_ENABLED: z.enum(['true', 'false']).optional(),
   SERVICE_VERSION: z.string().min(1).default('development'),

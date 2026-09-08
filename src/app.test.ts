@@ -7,7 +7,7 @@ const config: AppConfig = {
   appEnv: 'test',
   databaseUrl: 'postgresql://postgres:postgres@localhost:5432/mailflow',
   host: '127.0.0.1',
-  port: 3000,
+  port: 8080,
   logLevel: 'silent',
   apiDocsEnabled: true,
   serviceVersion: 'test',

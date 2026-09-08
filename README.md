@@ -85,7 +85,7 @@ Infisical injects environment variables before a process starts. Application cod
 | `DATABASE_URL` | Yes | — | PostgreSQL connection URL |
 | `APP_ENV` | No | `development` | `development`, `test`, `staging`, or `production` |
 | `HOST` | No | `0.0.0.0` | API bind address |
-| `PORT` | No | `3000` | API port |
+| `PORT` | No | `8080` | API port |
 | `LOG_LEVEL` | No | `info` | Pino log level |
 | `API_DOCS_ENABLED` | No | Enabled outside production | Enables `/docs` and `/openapi.json` |
 | `SERVICE_VERSION` | No | `development` | Version exposed through logs and OpenAPI |
