@@ -15,6 +15,6 @@
     "customConditions": ["development"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "database/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "database/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
   "exclude": ["dist", "node_modules"]
 }

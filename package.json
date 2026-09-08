@@ -31,6 +31,7 @@
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:architecture": "vitest run tests/architecture/moduleBoundaries.test.ts",
     "test:watch": "vitest",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build",
     "db:generate:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit generate --config=database/configs/identityWorkspace.ts",

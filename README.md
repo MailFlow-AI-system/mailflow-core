@@ -108,6 +108,7 @@ Infisical injects environment variables before a process starts. Application cod
 | `bun run format` | Apply formatting and import organization |
 | `bun run typecheck` | Run TypeScript without emitting files |
 | `bun run test` | Run the Vitest suite once |
+| `bun run test:architecture` | Enforce module import boundaries |
 | `bun run check` | Run the complete local CI gate |
 
 Drizzle commands use the same Infisical environment and secret path:
@@ -166,7 +167,11 @@ src/modules/mail/
         └── listMessages.test.ts
 ```
 
-Use relative imports inside a slice. Use `#shared/*` for shared technical code and `#modules/*` only for another module's public `index.ts`. The package import map resolves TypeScript source in development and compiled JavaScript in production.
+Use relative imports inside a module. Use `#shared/*` for shared technical code and
+`#modules/<module>` only for another module's public `index.ts`. Deep module aliases,
+relative imports across modules, aliases back into the owning module, and dependencies from
+`shared` to business modules are rejected by `bun run test:architecture`. The package import
+map resolves TypeScript source in development and compiled JavaScript in production.
 
 Modules own their tables, PostgreSQL schema, migrations, repositories, and transactions. Cross-module joins, foreign keys, database access, and transactions are prohibited. Shared database code owns only the connection and Drizzle client construction.
 
@@ -202,7 +207,7 @@ CSRF protection is mandatory before authenticated browser routes are introduced,
 
 ## Testing and delivery automation
 
-Tests execute on Node.js through Vitest. Current tests cover configuration validation, health behavior, RFC 9457 responses, and conditional OpenAPI/Swagger publication. PostgreSQL is represented by an injected readiness function in this foundation task; no remote database or secret is required by the test suite.
+Tests execute on Node.js through Vitest. Current tests cover configuration validation, health behavior, RFC 9457 responses, conditional OpenAPI/Swagger publication, and module import boundaries. PostgreSQL is represented by an injected readiness function in this foundation task; no remote database or secret is required by the test suite.
 
 `bun run check` is the complete local quality gate:
 
