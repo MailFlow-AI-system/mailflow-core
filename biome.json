@@ -13,7 +13,20 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["#modules/*/*"],
+                "message": "Import another module through its public entry point."
+              }
+            ]
+          }
+        }
+      }
     }
   },
   "assist": {
