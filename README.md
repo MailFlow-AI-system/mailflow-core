@@ -55,13 +55,6 @@ Start the local PostgreSQL database:
 bun run db:up
 ```
 
-Apply both module-owned migration histories:
-
-```bash
-bun run db:migrate:identity-workspace
-bun run db:migrate:mail
-```
-
 Start the API:
 
 ```bash
@@ -121,6 +114,7 @@ bun run db:migrate:identity-workspace
 bun run db:migrate:mail
 ```
 
+Schema files and migration histories are created with the first database-backed business slice.
 There is intentionally no `drizzle-kit push` script. Database changes use generated, reviewed, versioned SQL migrations.
 
 ## HTTP surface
@@ -142,13 +136,10 @@ The executable structure is intentionally small:
 
 ```text
 database/
-├── configs/                  # One Drizzle Kit config per owning module
-└── migrations/               # Independent migration history per module
+└── configs/                  # One Drizzle Kit config per owning module
 src/
 ├── entrypoints/              # API and worker process composition
 ├── modules/
-│   ├── identityWorkspace/    # Identity/Workspace-owned database schema
-│   ├── mail/                 # Mail-owned database schema
 │   └── system/
 │       └── health/           # Executable health vertical slice
 └── shared/                   # Technical configuration, HTTP, DB, logging, runtime
