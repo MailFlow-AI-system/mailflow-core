@@ -160,9 +160,13 @@ src/modules/mail/
 Use relative imports inside a module. Use `#shared/*` for shared technical code and
 `#modules/<module>` only for another module's public `index.ts`. Biome rejects deep module aliases.
 The package import map resolves TypeScript source in development and compiled JavaScript in
-production.
+production. Root-level tooling configuration may import source files relatively when it must run
+before compiled output exists, as the Drizzle configuration does.
 
 Modules own their tables, PostgreSQL schema, migrations, repositories, and transactions. Cross-module joins, foreign keys, database access, and transactions are prohibited. Shared database code owns only the connection and Drizzle client construction.
+
+Process-scoped resources are created and closed only by entrypoints. Modules receive constructed
+dependencies from their process composition root.
 
 ## MVP capability map
 
