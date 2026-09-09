@@ -1,0 +1,62 @@
+{
+  "name": "mailflow-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "imports": {
+    "#modules/*": {
+      "development": "./src/modules/*/index.ts",
+      "default": "./dist/modules/*/index.js"
+    },
+    "#shared/*": {
+      "development": "./src/shared/*.ts",
+      "default": "./dist/shared/*.js"
+    }
+  },
+  "scripts": {
+    "dev": "infisical run --env=dev --path=/mailflow-core -- tsx watch --conditions=development src/entrypoints/api.ts",
+    "dev:worker": "infisical run --env=dev --path=/mailflow-core -- tsx watch --conditions=development src/entrypoints/worker.ts",
+    "db:up": "docker compose up -d --wait database",
+    "db:down": "docker compose down",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --enable-source-maps dist/entrypoints/api.js",
+    "start:worker": "node --enable-source-maps dist/entrypoints/worker.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build",
+    "db:generate:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit generate --config=database/configs/identityWorkspace.ts",
+    "db:generate:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit generate --config=database/configs/mail.ts",
+    "db:migrate:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit migrate --config=database/configs/identityWorkspace.ts",
+    "db:migrate:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit migrate --config=database/configs/mail.ts",
+    "db:check:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/identityWorkspace.ts",
+    "db:check:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/mail.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@hono/swagger-ui": "^0.6.1",
+    "@hono/zod-openapi": "^1.6.3",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.5",
+    "pg": "^8.23.0",
+    "pino": "^10.3.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^4.0.0"
+  }
+}
