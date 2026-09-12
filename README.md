@@ -1,6 +1,6 @@
 # MailFlow Core
 
-MailFlow Core is the Node.js backend for the MailFlow MVP. It produces two processes from one codebase and release artifact:
+MailFlow Core is the Node.js backend for the MailFlow MVP. It produces two processes from one codebase and shared container recipe:
 
 - an HTTP API built with Hono;
 - a worker that will execute Mail-owned asynchronous jobs.
@@ -68,6 +68,64 @@ bun run dev:worker
 ```
 
 Bun manages dependencies and launches scripts. Application code always runs on Node.js and must not use Bun runtime APIs.
+
+## Deployment
+
+Railway is the selected compute platform for the MailFlow Core MVP. It runs the API and worker as
+separate services from the `MailFlow-AI-system/mailflow-core` repository while keeping the three
+delivery environments isolated. The complete deployment decision and validation boundary are
+recorded in
+[`docs/deployment.md`](docs/deployment.md).
+
+| Environment | Branch | API service and URL | Worker service | `APP_ENV` |
+| --- | --- | --- | --- | --- |
+| Development | `development` | `dev-api-core` — `https://mailflow-core-api-dev.up.railway.app` | `dev-api-worker` | `development` |
+| Staging | `staging` | `staging-api-core` — `https://mailflow-core-api-staging.up.railway.app` | `staging-api-worker` | `staging` |
+| Production | `main` | `api-core` — `https://mailflow-core-api.up.railway.app` | `api-worker` | `production` |
+
+Only the API services have public HTTP domains. The workers are private background processes and
+do not need public networking or an HTTP health check. All six services use the repository root and
+the root `Dockerfile`; Railway's automatic Dockerfile detection requires that exact filename. The
+image builds with Bun `1.4.1` and runs on Node.js `24.20.0`. The target dashboard Config File path
+is empty: the repository does not ship legacy `railway.json` or `railway.toml` manifests. Railway's
+Config as Code is deprecated for new services and reaches its legacy-service cutoff on
+2026-12-01; the existing services therefore keep their settings in the dashboard. Compare each
+existing service with the target settings and change only mismatches; do not recreate or re-enable
+the removed manifest path. See the
+[Railway Dockerfile](https://docs.railway.com/builds/dockerfiles) and
+[Config as Code](https://docs.railway.com/config-as-code) documentation.
+
+The target API start command is `node --enable-source-maps dist/entrypoints/api.js` and the target
+worker start command is `node --enable-source-maps dist/entrypoints/worker.js`. These commands
+invoke Node.js directly. Target API settings use `/health/ready` as the deploy-time health check;
+target worker settings clear healthchecks and public domains. Both service types target `On Failure`
+with a maximum of 10 retries and 15 seconds of deployment draining; Railway's default draining is
+0 seconds, so 15 seconds is an explicit target that exceeds the API's 10-second graceful-shutdown
+timeout. These are target panel settings, not proof that every current service matches them. Virginia
+is the reported region; the exact Railway region identifier remains pending independent capture.
+
+Railway auto-deploys are reported enabled for all six services, with `Wait for CI` enabled. The
+promotion flow is `development` → `staging` → `main` through reviewed branch changes. Native
+Railway builds rebuild the selected branch in each environment; the MVP does not publish to GHCR or
+claim strict build-once image-digest promotion.
+
+Infisical remains the secret delivery boundary. Six service-specific Secret Syncs (API and worker
+per environment) use the existing connections `railway-mailflow-core-development`,
+`railway-mailflow-core-staging`, and `railway-mailflow-core-production`; the exact Infisical slugs
+and current bindings remain pending capture. Each sync uses the `/mailflow-core` path, and the
+matching Railway services receive only their environment's `DATABASE_URL`. `APP_ENV` is public
+environment configuration kept in Railway;
+it is not a secret and is not embedded in the image. Set `SERVICE_VERSION` to
+`${{RAILWAY_GIT_COMMIT_SHA}}` so GitHub-triggered deployments expose the triggering commit. Railway
+provides that variable only for GitHub-triggered deployments, so a manual dashboard or CLI deploy
+must verify that its rendered value is non-empty before it is treated as versioned evidence. The
+application does not use the Infisical SDK at runtime.
+
+Railway is the cost-accepted MVP choice because it provides the required persistent API and worker
+processes without forcing the project to operate a VPS before product scale justifies it. When
+traffic, reliability, resource control, or operating requirements justify the change, the same
+containerized services can move to a paid VPS. That migration changes compute operations; database,
+secret delivery, and other managed dependencies remain separate decisions.
 
 ## Environment contract
 
@@ -208,7 +266,24 @@ Tests execute on Node.js through Vitest. Current tests cover configuration valid
 2. type-check and test;
 3. compile the production output.
 
-GitHub Actions configuration is intentionally deferred to the next delivery task. It should start by reproducing the local gate on pull requests, then grow with Testcontainers for disposable PostgreSQL integration tests, production-image smoke tests, immutable SHA-tagged image publication, homologation, and promotion of the same image digest to production. Infisical will authenticate GitHub Actions through OIDC; secrets will never be embedded in images.
+`.github/workflows/ci.yml` reproduces this gate on pull requests and pushes to `development`,
+`staging`, and `main`. Its single `CI Required` job uses pinned action revisions, no path filters,
+no repository secrets, no dependency cache, and `persist-credentials: false`. Pull request runs
+cancel superseded runs for the same PR; push runs use unique run IDs so a later push does not cancel
+an earlier delivery check. `Wait for CI` is reported enabled, but its remote behavior and the
+`CI Required` check still need confirmation after the first PR creates the check suite. Skipped and
+neutral checks do not block Railway; a cancelled workflow blocks only when no other workflow for the
+same commit succeeds. Do not interpret a non-failure as proof that every check ran successfully.
+
+Local CI and image smoke results do not prove remote CI, Railway deployment settings, Secret Sync,
+worker liveness, database identity, or promotion behavior. Capture those facts per deployment in the
+operational runbook before calling an environment healthy.
+
+The current Railway flow builds from the selected branch for each service. That does not prove that
+API and worker deployments, or successive environment deployments, share one immutable image digest.
+Strict build-once and digest promotion remains a future release-process decision. If adopted, it
+must replace or coordinate with Railway's native source build so that two competing deployment
+paths cannot publish the same service.
 
 ## Future evolution
 
