@@ -7,7 +7,7 @@ import { createApp } from '../app.js'
 
 const config = loadConfig(process.env)
 const logger = createLogger(config)
-const database = createDatabase(config.databaseUrl)
+const database = createDatabase(config.databaseUrl, logger)
 const app = createApp({ config, logger, checkDatabase: database.check })
 
 const server = serve({
