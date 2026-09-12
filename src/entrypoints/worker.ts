@@ -5,7 +5,7 @@ import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 
 const config = loadConfig(process.env)
 const logger = createLogger(config)
-const database = createDatabase(config.databaseUrl)
+const database = createDatabase(config.databaseUrl, logger)
 
 logger.info('Worker started without job handlers')
 
