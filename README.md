@@ -18,6 +18,7 @@ The repository currently contains the executable foundation only. Business APIs 
 - Zod and `@hono/zod-openapi`
 - PostgreSQL, Drizzle ORM, Drizzle Kit, and `node-postgres`
 - Pino structured logging
+- OpenTelemetry SDK with an OTLP Collector boundary
 - Vitest
 - Biome for linting, formatting, and import organization
 - Infisical for secret delivery
@@ -82,6 +83,9 @@ Infisical injects environment variables before a process starts. Application cod
 | `LOG_LEVEL` | No | `info` | Pino log level |
 | `API_DOCS_ENABLED` | No | Enabled outside production | Enables `/docs` and `/openapi.json` |
 | `SERVICE_VERSION` | No | `development` | Version exposed through logs and OpenAPI |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | — | Private Collector HTTP endpoint; absence disables telemetry safely |
+| `OTEL_TRACE_SAMPLE_RATE` | No | `0.1` | Ratio for sampled successful traces |
+| `OTEL_SERVICE_INSTANCE_ID` | No | Hostname and process ID | Stable process instance identity for telemetry |
 
 `.env.example` documents the contract for tooling and local PostgreSQL experiments; it is not loaded by the application.
 
@@ -207,6 +211,31 @@ Tests execute on Node.js through Vitest. Current tests cover configuration valid
 1. lint and check formatting;
 2. type-check and test;
 3. compile the production output.
+
+## Observability
+
+The API and worker initialize OpenTelemetry before composing their process resources. They expose
+distinct service identities (`mailflow-core-api` and `mailflow-core-worker`) and send traces,
+metrics, and Pino logs to a private OTLP HTTP Collector only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is present. Local tests and development remain no-op safe when the
+endpoint is absent.
+
+The Collector configuration in `observability/otel-collector.yaml` receives OTLP over HTTP,
+filters and redacts sensitive log attributes, applies bounded memory/batch/retry/queue controls, and exports
+to Grafana Cloud using only Collector-owned `GRAFANA_CLOUD_OTLP_ENDPOINT` and
+`GRAFANA_CLOUD_OTLP_AUTH_HEADER` secrets. Applications never receive Grafana credentials.
+
+Validate the configuration locally without Grafana credentials:
+
+```bash
+bun run observability:collector:validate
+```
+
+HTTP RED metrics use method, bounded route, and status dimensions. Runtime gauges cover resident
+memory and uptime. The worker emits startup/shutdown lifecycle signals only; queue depth, retry,
+and DLQ metrics are intentionally absent until real job handlers exist. Logs, spans, and metric
+attributes never include email content, addresses, cookies, authorization headers, secrets,
+`DATABASE_URL`, or provider payloads.
 
 ## Future evolution
 

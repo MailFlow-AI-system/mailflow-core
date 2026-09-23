@@ -1,0 +1,78 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  filter/drop-sensitive:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'attributes["authorization"] != nil'
+        - 'attributes["cookie"] != nil'
+        - 'attributes["DATABASE_URL"] != nil'
+        - 'attributes["email"] != nil'
+        - 'attributes["body"] != nil'
+        - 'attributes["payload"] != nil'
+  transform/redact:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - delete_key(attributes, "authorization")
+          - delete_key(attributes, "cookie")
+          - delete_key(attributes, "set-cookie")
+          - delete_key(attributes, "databaseUrl")
+          - delete_key(attributes, "DATABASE_URL")
+          - delete_key(attributes, "password")
+          - delete_key(attributes, "secret")
+          - delete_key(attributes, "token")
+          - delete_key(attributes, "accessToken")
+          - delete_key(attributes, "refreshToken")
+          - delete_key(attributes, "email")
+          - delete_key(attributes, "subject")
+          - delete_key(attributes, "body")
+          - delete_key(attributes, "payload")
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  otlphttp/grafana:
+    endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:GRAFANA_CLOUD_OTLP_AUTH_HEADER}
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 512
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/grafana]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/drop-sensitive, transform/redact, batch]
+      exporters: [otlphttp/grafana]
