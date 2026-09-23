@@ -223,10 +223,10 @@ endpoint is absent.
 The Collector configuration in `observability/otel-collector.yaml` receives OTLP over HTTP,
 filters and redacts sensitive log attributes, applies bounded memory/batch/retry/queue controls, and
 exports to Grafana Cloud using `GRAFANA_CLOUD_OTLP_ENDPOINT` and
-`GRAFANA_CLOUD_OTLP_AUTH_HEADER`. The current temporary Infisical Secret Sync uses the shared
-`/mailflow-core` source, so those variables may also be delivered to API/worker environments even
-though application code does not use them. Service-specific Secret Sync isolation is a hardening
-follow-up, not an active guarantee.
+`GRAFANA_CLOUD_OTLP_AUTH_HEADER`. In `dev`, the source of record is Infisical `/mailflow-core` and
+the values are currently entered manually on the Railway Collector service because Collector Secret
+Sync is not configured. Existing API/worker sync behavior may expose the same variables to those
+services; service-specific isolation must be configured and verified before production.
 
 Validate the configuration locally without Grafana credentials:
 
