@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
-import { createLogger, flushLogger } from '#shared/logging/logger'
+import { createLogger, shutdownLogger } from '#shared/logging/logger'
 import { startObservability } from '#shared/observability/observability'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 import { createApp } from '../app.js'
@@ -51,6 +51,6 @@ try {
   clearTimeout(forceShutdown)
   await database.pool.end()
   logger.info('API shutdown completed')
-  await flushLogger(logger)
+  await shutdownLogger(logger)
   await telemetry.shutdown()
 }

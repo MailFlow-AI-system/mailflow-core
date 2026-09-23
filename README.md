@@ -220,25 +220,20 @@ metrics, and Pino logs to a private OTLP HTTP Collector only when
 `OTEL_EXPORTER_OTLP_ENDPOINT` is present. Local tests and development remain no-op safe when the
 endpoint is absent.
 
-The Collector configuration in `observability/otel-collector.yaml` receives OTLP over HTTP,
-filters and redacts sensitive log attributes, applies bounded memory/batch/retry/queue controls, and
-exports to Grafana Cloud using `GRAFANA_CLOUD_OTLP_ENDPOINT` and
-`GRAFANA_CLOUD_OTLP_AUTH_HEADER`. In `dev`, the source of record is Infisical `/mailflow-core` and
-the values are currently entered manually on the Railway Collector service because Collector Secret
-Sync is not configured. Existing API/worker sync behavior may expose the same variables to those
-services; service-specific isolation must be configured and verified before production.
+The Collector uses `GRAFANA_CLOUD_OTLP_ENDPOINT` and `GRAFANA_CLOUD_OTLP_AUTH_HEADER` to export
+telemetry. Configure these on the Collector service; API and worker processes need only its private
+`OTEL_EXPORTER_OTLP_ENDPOINT`.
+In `dev`, Railway Collector secrets are entered manually because Collector Secret Sync is not
+configured. Isolate these secrets from API and worker processes before production.
 
-Validate the configuration locally without Grafana credentials:
+Validate the built Collector image and its configuration with Docker, without Grafana credentials:
 
 ```bash
 bun run observability:collector:validate
 ```
 
-HTTP RED metrics use method, bounded route, and status dimensions. Runtime gauges cover resident
-memory and uptime. The worker emits startup/shutdown lifecycle signals only; queue depth, retry,
-and DLQ metrics are intentionally absent until real job handlers exist. Logs, spans, and metric
-attributes never include email content, addresses, cookies, authorization headers, secrets,
-`DATABASE_URL`, or provider payloads.
+HTTP request duration is recorded in seconds with method, bounded route, and status dimensions.
+The worker records startup and shutdown; job metrics await actual job handlers.
 
 ## Future evolution
 

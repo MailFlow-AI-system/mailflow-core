@@ -5,15 +5,9 @@ export function createWorkerLifecycleMetrics(meter: Meter) {
     description: 'Worker lifecycle transitions.',
     unit: '{transition}',
   })
-  const activity = meter.createCounter('mailflow.worker.activity.count', {
-    description: 'Worker activity transitions.',
-    unit: '{activity}',
-  })
-
   return {
     started() {
       lifecycle.add(1, { state: 'started' })
-      activity.add(1, { activity: 'startup' })
     },
     stopped() {
       lifecycle.add(1, { state: 'stopped' })

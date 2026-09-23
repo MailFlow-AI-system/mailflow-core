@@ -1,6 +1,5 @@
 import {
   type Attributes,
-  type Counter,
   type Histogram,
   context as otelContext,
   propagation,
@@ -15,15 +14,16 @@ import type { Logger } from 'pino'
 import type { Observability } from '../observability/observability.js'
 
 export function requestLogger(logger: Logger, observability: Observability): MiddlewareHandler {
-  const requestCount: Counter = observability.meter.createCounter('http.server.request.count', {
-    description: 'Completed HTTP requests.',
-    unit: '{request}',
-  })
   const requestDuration: Histogram = observability.meter.createHistogram(
     'http.server.request.duration',
     {
       description: 'HTTP request duration.',
-      unit: 'ms',
+      unit: 's',
+      advice: {
+        explicitBucketBoundaries: [
+          0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+        ],
+      },
     },
   )
   const tracer: Tracer = observability.tracer
@@ -58,23 +58,22 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
         span.setStatus({ code: SpanStatusCode.ERROR })
         throw error
       } finally {
-        const durationMs = Math.round(performance.now() - startedAt)
+        const durationSeconds = (performance.now() - startedAt) / 1000
+        const durationMs = Math.round(durationSeconds * 1000)
         const status = honoContext.res.status
         const route = honoContext.req.routePath || initialRoute
         const attributes: Attributes = {
           'http.request.method': method,
           'http.route': route,
           'http.response.status_code': status,
+          'url.scheme': new URL(honoContext.req.url).protocol.slice(0, -1),
+          ...(status >= 500 ? { 'error.type': String(status) } : {}),
         }
 
         span.updateName(`${method} ${route}`)
         span.setAttribute('http.route', route)
         span.setAttribute('http.response.status_code', status)
-        requestCount.add(1, attributes)
-        requestDuration.record(durationMs, {
-          'http.request.method': method,
-          'http.route': route,
-        })
+        requestDuration.record(durationSeconds, attributes)
         if (status >= 500) {
           span.setStatus({ code: SpanStatusCode.ERROR })
         }
