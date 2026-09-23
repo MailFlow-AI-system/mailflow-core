@@ -5,7 +5,8 @@ Provider account creation and secret entry remain an operator task.
 
 ## Application contract
 
-Configure these values in the Infisical environment path used by each Core API/worker service:
+Configure the application values in the existing Infisical path `/mailflow-core` used by the Core
+API and worker services:
 
 | Key | API value | Worker value | Notes |
 | --- | --- | --- | --- |
@@ -13,42 +14,40 @@ Configure these values in the Infisical environment path used by each Core API/w
 | `OTEL_TRACE_SAMPLE_RATE` | `0.1` | `0.1` | Parent-based ratio sampling for successful traces |
 | `OTEL_SERVICE_INSTANCE_ID` | Railway service instance value | Railway service instance value | Optional; hostname/process fallback is safe |
 
-The application never receives a Grafana token. If `OTEL_EXPORTER_OTLP_ENDPOINT` is absent, the
-SDK and metrics are no-op safe and Pino remains local stdout only.
+Application code does not read or use the Grafana token. However, the current shared Secret Sync
+source can still deliver `GRAFANA_*` variables to API and worker environments; this is a known
+exposure risk until service-specific Secret Sync is configured. If `OTEL_EXPORTER_OTLP_ENDPOINT` is
+absent, the SDK and metrics are no-op safe and Pino remains local stdout only.
 
 ## Grafana Cloud values
 
 Create one Grafana Cloud Free stack for the pilot and an OTLP access policy/token with write-only
-permissions for metrics, logs, and traces. Record the stack's OTLP HTTP base URL and the generated
-Basic authorization value in the Collector environment only:
+permissions for metrics, logs, and traces. The current temporary setup stores the Collector
+values in the existing shared Infisical path `/mailflow-core`:
 
-| Collector key | Source | Scope |
+| Collector key | Source | Current sync scope |
 | --- | --- | --- |
-| `GRAFANA_CLOUD_OTLP_ENDPOINT` | Grafana Cloud stack OTLP HTTP endpoint | Collector only |
-| `GRAFANA_CLOUD_OTLP_AUTH_HEADER` | `Basic <base64(instance-id:token)>` | Collector only |
+| `GRAFANA_CLOUD_OTLP_ENDPOINT` | Grafana Cloud stack OTLP HTTP endpoint | `/mailflow-core` shared sync |
+| `GRAFANA_CLOUD_OTLP_AUTH_HEADER` | `Basic <base64(instance-id:token)>` | `/mailflow-core` shared sync |
 
 Do not commit either value. The authorization value is derived from the Grafana user/instance ID
 and token and must be rotated as a single secret in Infisical. Because the Collector maps this
 value to the OTLP exporter's `headers.Authorization`, store only the HTTP header value beginning
 with `Basic `. Do not include the `Authorization=` variable-name prefix shown in some Grafana
-snippets.
+snippets. The Infisical key name must remain exactly `GRAFANA_CLOUD_OTLP_AUTH_HEADER`.
 
 ## Infisical scope and Secret Sync
 
-Keep application and Collector secrets in separate paths in every environment (`dev`, `staging`,
-and `prod`):
+The current temporary setup uses one shared `/mailflow-core` source in each environment (`dev`,
+`staging`, and `prod`) for API, worker, and Collector. Therefore, it does not provide credential
+isolation: a Grafana token stored there may be injected into API and worker environments even though
+their application code does not use it. Keep the token write-only and limited to metrics, logs, and
+traces, and rotate it as a single Infisical secret.
 
-| Infisical path | Consumer | Allowed observability keys |
-| --- | --- | --- |
-| `/mailflow-core` | Core API and worker | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACE_SAMPLE_RATE`, `OTEL_SERVICE_INSTANCE_ID` |
-| `/mailflow-core/otel-collector` | Private Collector only | `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_AUTH_HEADER` |
-
-Configure each Railway Secret Sync/integration with its exact path. Do not place the Grafana keys
-under `/mailflow-core`, and do not configure API or worker services to import the
-`/mailflow-core/otel-collector` subpath. The API and worker sync must remain exact/non-recursive at
-`/mailflow-core`; the Collector sync must use exact source `/mailflow-core/otel-collector` and
-target only the Collector service. The Infisical key name must match the YAML exactly:
-`GRAFANA_CLOUD_OTLP_AUTH_HEADER`; rename any differently named Grafana auth key before syncing it.
+Hardening follow-up: configure service-specific Secret Sync so API/worker and Collector have
+separate source scopes and targets. The Collector scope must be delivered only to the private
+Collector service; API/worker sync must not import it. Do not treat this isolation as active until
+the provider configuration is verified.
 
 ## Railway Collector service
 
@@ -67,8 +66,10 @@ If the service is configured from a Railway Dockerfile path, set the path to
 deploy that image. The selected source revision must contain both the Dockerfile and the
 configuration before the service is created.
 
-Inject only `GRAFANA_CLOUD_OTLP_ENDPOINT` and `GRAFANA_CLOUD_OTLP_AUTH_HEADER` into this service.
-Expose no public port. The Collector listens on private HTTP `4318` and health-check HTTP `13133`.
+The Collector consumes `GRAFANA_CLOUD_OTLP_ENDPOINT` and `GRAFANA_CLOUD_OTLP_AUTH_HEADER` from the
+current shared Infisical source. This source may also inject those variables into API/worker
+environments; do not claim Collector-only delivery until Secret Sync isolation is verified. Expose
+no public port. The Collector listens on private HTTP `4318` and health-check HTTP `13133`.
 Configure API and worker services to use the private endpoint above, then run:
 
 ```bash

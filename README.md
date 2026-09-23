@@ -221,9 +221,12 @@ metrics, and Pino logs to a private OTLP HTTP Collector only when
 endpoint is absent.
 
 The Collector configuration in `observability/otel-collector.yaml` receives OTLP over HTTP,
-filters and redacts sensitive log attributes, applies bounded memory/batch/retry/queue controls, and exports
-to Grafana Cloud using only Collector-owned `GRAFANA_CLOUD_OTLP_ENDPOINT` and
-`GRAFANA_CLOUD_OTLP_AUTH_HEADER` secrets. Applications never receive Grafana credentials.
+filters and redacts sensitive log attributes, applies bounded memory/batch/retry/queue controls, and
+exports to Grafana Cloud using `GRAFANA_CLOUD_OTLP_ENDPOINT` and
+`GRAFANA_CLOUD_OTLP_AUTH_HEADER`. The current temporary Infisical Secret Sync uses the shared
+`/mailflow-core` source, so those variables may also be delivered to API/worker environments even
+though application code does not use them. Service-specific Secret Sync isolation is a hardening
+follow-up, not an active guarantee.
 
 Validate the configuration locally without Grafana credentials:
 
