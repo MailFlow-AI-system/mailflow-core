@@ -32,10 +32,9 @@ describe('request telemetry', () => {
     })
     provider.register()
 
-    const requestCount = { add: vi.fn() }
     const requestDuration = { record: vi.fn() }
     const meter = {
-      createCounter: vi.fn(() => requestCount),
+      createCounter: vi.fn(),
       createHistogram: vi.fn(() => requestDuration),
     }
     const telemetry = {
@@ -64,6 +63,7 @@ describe('request telemetry', () => {
     const response = await app.request('/health/live', {
       headers: {
         'x-request-id': 'request-123',
+        authorization: 'Bearer private-token',
         traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
       },
     })
@@ -86,17 +86,27 @@ describe('request telemetry', () => {
       'http.response.status_code': 200,
       'mailflow.request.id': 'request-123',
     })
-    expect(requestCount.add).toHaveBeenCalledWith(
-      1,
+    expect(meter.createCounter).not.toHaveBeenCalled()
+    expect(meter.createHistogram).toHaveBeenCalledWith(
+      'http.server.request.duration',
       expect.objectContaining({
-        'http.route': '/health/live',
-        'http.response.status_code': 200,
+        unit: 's',
+        advice: {
+          explicitBucketBoundaries: [
+            0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+          ],
+        },
       }),
     )
     expect(requestDuration.record).toHaveBeenCalledWith(
       expect.any(Number),
-      expect.objectContaining({ 'http.route': '/health/live' }),
+      expect.objectContaining({
+        'http.route': '/health/live',
+        'http.response.status_code': 200,
+        'url.scheme': 'http',
+      }),
     )
+    expect(requestDuration.record.mock.calls[0]?.[0]).toBeLessThan(1)
     expect(logs).toContainEqual(
       expect.objectContaining({
         msg: 'Request completed',
@@ -105,8 +115,14 @@ describe('request telemetry', () => {
         spanId: span.spanContext().spanId,
       }),
     )
-    expect(JSON.stringify(logs)).not.toContain('authorization')
-    expect(JSON.stringify(logs)).not.toContain('DATABASE_URL')
+    expect(
+      JSON.stringify({
+        logs,
+        spanAttributes: span.attributes,
+        spanEvents: span.events,
+        metrics: requestDuration.record.mock.calls,
+      }),
+    ).not.toContain('private-token')
 
     await provider.shutdown()
   })
@@ -117,11 +133,12 @@ describe('request telemetry', () => {
       spanProcessors: [new SimpleSpanProcessor(spanExporter)],
     })
     provider.register()
+    const durationRecord = vi.fn()
     const telemetry = {
       enabled: true,
       meter: {
         createCounter: () => ({ add: vi.fn() }),
-        createHistogram: () => ({ record: vi.fn() }),
+        createHistogram: () => ({ record: durationRecord }),
       },
       serviceName: 'mailflow-core-api',
       tracer: provider.getTracer('mailflow-core-api'),
@@ -153,6 +170,14 @@ describe('request telemetry', () => {
     await provider.forceFlush()
 
     expect(response.status).toBe(500)
+    expect(durationRecord).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({
+        'http.route': '/failure/:email',
+        'http.response.status_code': 500,
+        'error.type': '500',
+      }),
+    )
     const span = spanExporter.getFinishedSpans()[0]
     if (span === undefined) throw new Error('Expected a finished error span')
     expect(span.events).toEqual([

@@ -1,3 +1,4 @@
+import { once } from 'node:events'
 import { trace } from '@opentelemetry/api'
 import pino from 'pino'
 
@@ -27,26 +28,30 @@ const redactedPaths = [
   'payload',
 ]
 
+const otlpTransports = new WeakMap<pino.Logger, ReturnType<typeof pino.transport>>()
+
 export function createLogger(config: AppConfig, serviceName = 'mailflow-core-api') {
   const streams: pino.StreamEntry[] = [
     { stream: process.stdout as unknown as pino.DestinationStream },
   ]
+  let otlpTransport: ReturnType<typeof pino.transport> | undefined
 
   if (config.otlpEndpoint !== undefined) {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??= config.otlpEndpoint
+    otlpTransport = pino.transport({
+      target: 'pino-opentelemetry-transport',
+      options: {
+        loggerName: serviceName,
+        serviceVersion: config.serviceVersion,
+        resourceAttributes: createResourceAttributes(config, serviceName),
+      },
+    })
     streams.push({
-      stream: pino.transport({
-        target: 'pino-opentelemetry-transport',
-        options: {
-          loggerName: serviceName,
-          serviceVersion: config.serviceVersion,
-          resourceAttributes: createResourceAttributes(config, serviceName),
-        },
-      }),
+      stream: otlpTransport,
     })
   }
 
-  return pino(
+  const logger = pino(
     {
       name: serviceName,
       level: config.logLevel,
@@ -74,8 +79,16 @@ export function createLogger(config: AppConfig, serviceName = 'mailflow-core-api
     },
     pino.multistream(streams),
   )
+  if (otlpTransport !== undefined) otlpTransports.set(logger, otlpTransport)
+  return logger
 }
 
-export function flushLogger(logger: Pick<pino.Logger, 'flush'>): Promise<void> {
-  return new Promise((resolve) => logger.flush(() => resolve()))
+export async function shutdownLogger(logger: pino.Logger): Promise<void> {
+  const transport = otlpTransports.get(logger)
+  if (transport === undefined) return
+
+  otlpTransports.delete(logger)
+  const closed = once(transport, 'close')
+  transport.end()
+  await closed
 }

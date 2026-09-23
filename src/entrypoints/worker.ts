@@ -1,6 +1,6 @@
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
-import { createLogger, flushLogger } from '#shared/logging/logger'
+import { createLogger, shutdownLogger } from '#shared/logging/logger'
 import { startObservability } from '#shared/observability/observability'
 import { createWorkerLifecycleMetrics } from '#shared/observability/workerMetrics'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
@@ -22,6 +22,6 @@ try {
 } finally {
   workerMetrics.stopped()
   logger.info('Worker shutdown completed')
-  await flushLogger(logger)
+  await shutdownLogger(logger)
   await telemetry.shutdown()
 }
