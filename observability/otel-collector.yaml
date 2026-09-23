@@ -17,31 +17,31 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        - 'attributes["authorization"] != nil'
-        - 'attributes["cookie"] != nil'
-        - 'attributes["DATABASE_URL"] != nil'
-        - 'attributes["email"] != nil'
-        - 'attributes["body"] != nil'
-        - 'attributes["payload"] != nil'
+        - 'log.attributes["authorization"] != nil'
+        - 'log.attributes["cookie"] != nil'
+        - 'log.attributes["DATABASE_URL"] != nil'
+        - 'log.attributes["email"] != nil'
+        - 'log.attributes["body"] != nil'
+        - 'log.attributes["payload"] != nil'
   transform/redact:
     error_mode: ignore
     log_statements:
       - context: log
         statements:
-          - delete_key(attributes, "authorization")
-          - delete_key(attributes, "cookie")
-          - delete_key(attributes, "set-cookie")
-          - delete_key(attributes, "databaseUrl")
-          - delete_key(attributes, "DATABASE_URL")
-          - delete_key(attributes, "password")
-          - delete_key(attributes, "secret")
-          - delete_key(attributes, "token")
-          - delete_key(attributes, "accessToken")
-          - delete_key(attributes, "refreshToken")
-          - delete_key(attributes, "email")
-          - delete_key(attributes, "subject")
-          - delete_key(attributes, "body")
-          - delete_key(attributes, "payload")
+          - delete_key(log.attributes, "authorization")
+          - delete_key(log.attributes, "cookie")
+          - delete_key(log.attributes, "set-cookie")
+          - delete_key(log.attributes, "databaseUrl")
+          - delete_key(log.attributes, "DATABASE_URL")
+          - delete_key(log.attributes, "password")
+          - delete_key(log.attributes, "secret")
+          - delete_key(log.attributes, "token")
+          - delete_key(log.attributes, "accessToken")
+          - delete_key(log.attributes, "refreshToken")
+          - delete_key(log.attributes, "email")
+          - delete_key(log.attributes, "subject")
+          - delete_key(log.attributes, "body")
+          - delete_key(log.attributes, "payload")
   batch:
     timeout: 5s
     send_batch_size: 512

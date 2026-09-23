@@ -5,6 +5,8 @@ set -Eeuo pipefail
 readonly project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly config_path="${project_root}/observability/otel-collector.yaml"
 readonly dockerfile_path="${project_root}/Dockerfile.collector"
+readonly validation_otlp_endpoint="http://127.0.0.1:4318"
+readonly validation_auth_header="Basic validation-placeholder"
 
 required_dockerfile_fragments=(
   'FROM otel/opentelemetry-collector-contrib:0.143.0'
@@ -50,6 +52,8 @@ fi
 docker_bin="${DOCKER_BIN:-docker}"
 if command -v "${docker_bin}" >/dev/null 2>&1 && "${docker_bin}" version >/dev/null 2>&1; then
   "${docker_bin}" run --rm \
+    --env "GRAFANA_CLOUD_OTLP_ENDPOINT=${validation_otlp_endpoint}" \
+    --env "GRAFANA_CLOUD_OTLP_AUTH_HEADER=${validation_auth_header}" \
     --volume "${config_path}:/etc/otel-collector-config.yaml:ro" \
     otel/opentelemetry-collector-contrib:0.143.0 \
     validate --config=/etc/otel-collector-config.yaml
