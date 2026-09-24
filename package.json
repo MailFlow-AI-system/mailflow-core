@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "observability:collector:validate": "bash scripts/validateCollector.sh",
+    "observability:collector:validate": "bash scripts/observability/validateCollector.sh",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build",
     "db:generate:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit generate --config=database/configs/identityWorkspace.ts",
     "db:generate:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit generate --config=database/configs/mail.ts",

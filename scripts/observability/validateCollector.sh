@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-readonly project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly docker_bin="${DOCKER_BIN:-docker}"
 
 image_id="$("${docker_bin}" build --quiet --file "${project_root}/Dockerfile.collector" "${project_root}")"
