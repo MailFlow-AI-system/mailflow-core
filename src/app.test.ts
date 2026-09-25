@@ -11,6 +11,9 @@ const config: AppConfig = {
   logLevel: 'silent',
   apiDocsEnabled: true,
   serviceVersion: 'test',
+  otlpEndpoint: undefined,
+  otelTraceSampleRate: 0.1,
+  serviceInstanceId: 'test-instance',
 }
 
 function createTestApp(overrides: Partial<AppConfig> = {}) {

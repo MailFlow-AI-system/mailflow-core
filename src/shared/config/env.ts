@@ -1,3 +1,5 @@
+import { hostname } from 'node:os'
+
 import { z } from 'zod'
 
 const rawConfigSchema = z.object({
@@ -8,6 +10,9 @@ const rawConfigSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   API_DOCS_ENABLED: z.enum(['true', 'false']).optional(),
   SERVICE_VERSION: z.string().min(1).default('development'),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  OTEL_TRACE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  OTEL_SERVICE_INSTANCE_ID: z.string().min(1).optional(),
 })
 
 export type AppConfig = {
@@ -18,6 +23,9 @@ export type AppConfig = {
   logLevel: z.infer<typeof rawConfigSchema>['LOG_LEVEL']
   apiDocsEnabled: boolean
   serviceVersion: string
+  otlpEndpoint: string | undefined
+  otelTraceSampleRate: number
+  serviceInstanceId: string
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
@@ -34,5 +42,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         ? config.APP_ENV !== 'production'
         : config.API_DOCS_ENABLED === 'true',
     serviceVersion: config.SERVICE_VERSION,
+    otlpEndpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
+    otelTraceSampleRate: config.OTEL_TRACE_SAMPLE_RATE,
+    serviceInstanceId: config.OTEL_SERVICE_INSTANCE_ID ?? `${hostname()}-${process.pid}`,
   }
 }

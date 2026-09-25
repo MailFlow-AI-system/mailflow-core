@@ -16,6 +16,24 @@ describe('loadConfig', () => {
       logLevel: 'info',
       apiDocsEnabled: true,
       serviceVersion: 'development',
+      otlpEndpoint: undefined,
+      otelTraceSampleRate: 0.1,
+      serviceInstanceId: expect.any(String),
+    })
+  })
+
+  it('accepts an optional private Collector endpoint without requiring credentials', () => {
+    expect(
+      loadConfig({
+        ...requiredEnvironment,
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector.railway.internal:4318',
+        OTEL_TRACE_SAMPLE_RATE: '0.25',
+        OTEL_SERVICE_INSTANCE_ID: 'api-instance-1',
+      }),
+    ).toMatchObject({
+      otlpEndpoint: 'http://otel-collector.railway.internal:4318',
+      otelTraceSampleRate: 0.25,
+      serviceInstanceId: 'api-instance-1',
     })
   })
 

@@ -1,14 +1,21 @@
 import { serve } from '@hono/node-server'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
-import { createLogger } from '#shared/logging/logger'
+import { createLogger, shutdownLogger } from '#shared/logging/logger'
+import { startObservability } from '#shared/observability/observability'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 import { createApp } from '../app.js'
 
 const config = loadConfig(process.env)
-const logger = createLogger(config)
+const telemetry = await startObservability(config, 'mailflow-core-api')
+const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
-const app = createApp({ config, logger, checkDatabase: database.check })
+const app = createApp({
+  config,
+  logger,
+  observability: telemetry,
+  checkDatabase: database.check,
+})
 
 const server = serve({
   fetch: app.fetch,
@@ -40,8 +47,10 @@ try {
       resolve()
     })
   })
-  await database.pool.end()
-  logger.info('API shutdown completed')
 } finally {
   clearTimeout(forceShutdown)
+  await database.pool.end()
+  logger.info('API shutdown completed')
+  await shutdownLogger(logger)
+  await telemetry.shutdown()
 }

@@ -1,5 +1,6 @@
 import { swaggerUI } from '@hono/swagger-ui'
 import { OpenAPIHono } from '@hono/zod-openapi'
+import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import type { Logger } from 'pino'
@@ -8,17 +9,24 @@ import { createHealthModule } from '#modules/system'
 import type { AppConfig } from '#shared/config/env'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
+import { createNoopObservability, type Observability } from '#shared/observability/observability'
 
 type AppDependencies = {
   config: AppConfig
   logger: Logger
   checkDatabase: () => Promise<void>
+  observability?: Observability
 }
 
-export function createApp({ config, logger, checkDatabase }: AppDependencies) {
+export function createApp({
+  config,
+  logger,
+  checkDatabase,
+  observability = createNoopObservability('mailflow-core-api'),
+}: AppDependencies) {
   const app = new OpenAPIHono()
 
-  app.use('*', requestId(), secureHeaders(), requestLogger(logger))
+  app.use('*', requestId(), secureHeaders(), requestLogger(logger, observability))
 
   app.route('/', createHealthModule({ checkDatabase }))
 
@@ -43,11 +51,16 @@ export function createApp({ config, logger, checkDatabase }: AppDependencies) {
   )
 
   app.onError((error, context) => {
+    const activeSpan = trace.getActiveSpan()
+    activeSpan?.recordException({
+      name: error instanceof Error ? error.name : 'UnknownError',
+    })
+    activeSpan?.setStatus({ code: SpanStatusCode.ERROR })
     logger.error(
       {
         requestId: context.get('requestId'),
         method: context.req.method,
-        path: context.req.path,
+        route: context.req.routePath || 'unknown',
         errorName: error.name,
       },
       'Unhandled request error',
