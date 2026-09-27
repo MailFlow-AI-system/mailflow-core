@@ -8,6 +8,7 @@ import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApp } from '../../app.js'
+import type { AuthService } from '../../modules/identityWorkspace/infrastructure/auth/route.js'
 import type { AppConfig } from '../config/env.js'
 import type { Observability } from '../observability/observability.js'
 
@@ -22,6 +23,13 @@ const config: AppConfig = {
   otlpEndpoint: undefined,
   otelTraceSampleRate: 1,
   serviceInstanceId: 'test-instance',
+}
+
+const auth: AuthService = {
+  handler: async () => new Response(),
+  api: {
+    getSession: async () => null,
+  },
 }
 
 describe('request telemetry', () => {
@@ -58,6 +66,8 @@ describe('request telemetry', () => {
       logger,
       observability: telemetry,
       checkDatabase: vi.fn().mockResolvedValue(undefined),
+      auth,
+      allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
     })
 
     const response = await app.request('/health/live', {
@@ -159,6 +169,8 @@ describe('request telemetry', () => {
       logger,
       observability: telemetry,
       checkDatabase: vi.fn().mockResolvedValue(undefined),
+      auth,
+      allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
     })
     app.get('/failure/:email', () => {
       throw new Error('email body must never leave the request')
