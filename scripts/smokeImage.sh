@@ -120,6 +120,10 @@ fi
   --publish "${api_publish}" \
   --env APP_ENV=test \
   --env DATABASE_URL="${database_url}" \
+  --env BETTER_AUTH_SECRET=0123456789abcdef0123456789abcdef \
+  --env BETTER_AUTH_URL="http://localhost:${api_container_port}" \
+  --env SITE_URL=http://localhost:4321 \
+  --env WEB_APP_URL=http://localhost:3000 \
   --env HOST=0.0.0.0 \
   --env PORT="${api_container_port}" \
   --env LOG_LEVEL=info \
