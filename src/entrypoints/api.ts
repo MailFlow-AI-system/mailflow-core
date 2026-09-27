@@ -1,20 +1,26 @@
 import { serve } from '@hono/node-server'
+import { createAuth } from '#modules/identityWorkspace'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
 import { createLogger, shutdownLogger } from '#shared/logging/logger'
 import { startObservability } from '#shared/observability/observability'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 import { createApp } from '../app.js'
+import { loadAuthConfig } from '../modules/identityWorkspace/infrastructure/auth/authConfig.js'
 
 const config = loadConfig(process.env)
+const authConfig = loadAuthConfig(process.env)
 const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
+const auth = createAuth(database.database, authConfig)
 const app = createApp({
   config,
   logger,
   observability: telemetry,
   checkDatabase: database.check,
+  auth,
+  allowedAuthOrigins: authConfig.allowedOrigins,
 })
 
 const server = serve({
