@@ -15,6 +15,7 @@ The repository currently contains the executable foundation only. Business APIs 
 - Bun package manager and script runner
 - TypeScript with native ESM
 - Hono and `@hono/node-server`
+- Better Auth with the Drizzle PostgreSQL adapter
 - Zod and `@hono/zod-openapi`
 - PostgreSQL, Drizzle ORM, Drizzle Kit, and `node-postgres`
 - Pino structured logging
@@ -83,6 +84,10 @@ Infisical injects environment variables before a process starts. Application cod
 | `LOG_LEVEL` | No | `info` | Pino log level |
 | `API_DOCS_ENABLED` | No | Enabled outside production | Enables `/docs` and `/openapi.json` |
 | `SERVICE_VERSION` | No | `development` | Version exposed through logs and OpenAPI |
+| `BETTER_AUTH_SECRET` | Yes for API | — | Core-only secret used to sign and encrypt Better Auth data; generate with `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | Yes for API | — | Exact API origin, locally `http://localhost:8080` |
+| `SITE_URL` | Yes for API | — | Exact Site origin, locally `http://localhost:4321` |
+| `WEB_APP_URL` | Yes for API | — | Exact Web origin, locally `http://localhost:3000` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | — | Private Collector HTTP endpoint; absence disables telemetry safely |
 | `OTEL_TRACE_SAMPLE_RATE` | No | `0.1` | Ratio for sampled successful traces |
 | `OTEL_SERVICE_INSTANCE_ID` | No | Hostname and process ID | Stable process instance identity for telemetry |
@@ -129,6 +134,10 @@ There is intentionally no `drizzle-kit push` script. Database changes use genera
 | `GET /health/ready` | Confirms required configuration and PostgreSQL connectivity |
 | `GET /openapi.json` | OpenAPI 3.1 document when API docs are enabled |
 | `GET /docs` | Swagger UI when API docs are enabled |
+| `POST /api/auth/sign-up/email` | Register a user with name, email, and password |
+| `POST /api/auth/sign-in/email` | Start a persistent, revocable session |
+| `GET /api/auth/get-session` | Read the current session |
+| `POST /api/auth/sign-out` | Revoke the current session |
 
 Business endpoints will live below `/api/v1`.
 
@@ -196,11 +205,29 @@ Planned `mail` slices cover:
 
 Directories are added only with executable behavior. The capability map guides placement without creating empty speculative layers.
 
+## Authentication foundation
+
+Better Auth is mounted at `/api/auth` with its Drizzle adapter in the
+`identity_workspace` PostgreSQL schema. The initial capability is deliberately
+limited to email/password registration, login, persistent database sessions,
+session lookup, and logout. Password recovery, email delivery, workspaces,
+memberships, and MFA are not configured in this foundation.
+
+`SITE_URL` and `WEB_APP_URL` are validated as exact origins and are the only
+credentialed CORS origins for `/api/*`; the same values are Better Auth's
+`trustedOrigins`. `BETTER_AUTH_URL` is the API origin. Wildcards, paths,
+credentials, and non-HTTPS origins outside local development and tests are
+rejected. API resources under `/api/v1/*` require a valid Better Auth session.
+
+Only the API process loads `BETTER_AUTH_SECRET` through authentication
+configuration. The worker does not load or use authentication configuration.
+
 ## Security decisions deferred by design
 
-CORS is not enabled. The Web/API origin topology has not yet been selected, so a permissive policy would be both premature and unsafe.
-
-CSRF protection is mandatory before authenticated browser routes are introduced, but its implementation depends on the Web and Better Auth integration spike. That spike must define exact origins, credentialed CORS if required, cookie scope, and CSRF strategy. Wildcard origins must never be combined with cookies.
+Better Auth validates trusted origins for its browser authentication endpoints.
+Application-specific CSRF requirements remain mandatory before adding any
+state-changing `/api/v1/*` browser resource. Wildcard origins must never be
+combined with cookies.
 
 ## Testing and delivery automation
 

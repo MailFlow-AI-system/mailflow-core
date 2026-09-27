@@ -1,6 +1,7 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
+import type { AuthService } from './modules/identityWorkspace/infrastructure/auth/route.js'
 import type { AppConfig } from './shared/config/env.js'
 
 const config: AppConfig = {
@@ -17,10 +18,19 @@ const config: AppConfig = {
 }
 
 function createTestApp(overrides: Partial<AppConfig> = {}) {
+  const auth: AuthService = {
+    handler: vi.fn(async () => Response.json({ delegated: true })),
+    api: {
+      getSession: vi.fn(async () => null),
+    },
+  }
+
   return createApp({
     config: { ...config, ...overrides },
     logger: pino({ enabled: false }),
     checkDatabase: vi.fn().mockResolvedValue(undefined),
+    auth,
+    allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
   })
 }
 
@@ -99,5 +109,14 @@ describe('application', () => {
 
     expect(specificationResponse.status).toBe(404)
     expect(documentationResponse.status).toBe(404)
+  })
+
+  it('mounts Better Auth before the not-found handler', async () => {
+    const app = createTestApp()
+
+    const response = await app.request('/api/auth/get-session')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ delegated: true })
   })
 })
