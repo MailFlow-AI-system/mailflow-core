@@ -5,6 +5,7 @@ import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import type { Logger } from 'pino'
 
+import { type AuthService, installAuthRoutes } from '#modules/identityWorkspace'
 import { createHealthModule } from '#modules/system'
 import type { AppConfig } from '#shared/config/env'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
@@ -15,6 +16,8 @@ type AppDependencies = {
   config: AppConfig
   logger: Logger
   checkDatabase: () => Promise<void>
+  auth: AuthService
+  allowedAuthOrigins: string[]
   observability?: Observability
 }
 
@@ -22,12 +25,15 @@ export function createApp({
   config,
   logger,
   checkDatabase,
+  auth,
+  allowedAuthOrigins,
   observability = createNoopObservability('mailflow-core-api'),
 }: AppDependencies) {
   const app = new OpenAPIHono()
 
   app.use('*', requestId(), secureHeaders(), requestLogger(logger, observability))
 
+  installAuthRoutes(app, { auth, allowedOrigins: allowedAuthOrigins })
   app.route('/', createHealthModule({ checkDatabase }))
 
   if (config.apiDocsEnabled) {
