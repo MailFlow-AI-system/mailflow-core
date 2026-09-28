@@ -4,7 +4,7 @@ import { loadConfig } from '../config/env.js'
 import { createResourceAttributes, startObservability } from './observability.js'
 
 const config = loadConfig({
-  APP_ENV: 'test',
+  APP_ENV: 'development',
   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/mailflow',
   SERVICE_VERSION: 'test-version',
   OTEL_SERVICE_INSTANCE_ID: 'test-instance',
@@ -26,7 +26,7 @@ describe('observability bootstrap', () => {
     expect(createResourceAttributes(config, 'mailflow-core-worker')).toEqual({
       'service.name': 'mailflow-core-worker',
       'service.version': 'test-version',
-      'deployment.environment.name': 'test',
+      'deployment.environment.name': 'development',
       'service.instance.id': 'test-instance',
     })
   })

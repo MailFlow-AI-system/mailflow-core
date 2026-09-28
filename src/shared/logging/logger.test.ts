@@ -30,7 +30,7 @@ describe('logger lifecycle', () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${port}`
     try {
       const config = {
-        appEnv: 'test',
+        appEnv: 'development',
         databaseUrl: 'postgresql://localhost/test',
         host: '127.0.0.1',
         port: 8080,

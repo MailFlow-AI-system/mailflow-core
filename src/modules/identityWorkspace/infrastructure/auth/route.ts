@@ -2,23 +2,7 @@ import type { Env, Hono, Schema } from 'hono'
 import { cors } from 'hono/cors'
 
 import { problemDetailsResponse } from '#shared/http/problemDetails'
-
-export type AuthSession = {
-  session: { id: string }
-  user: { id: string }
-}
-
-export type AuthService = {
-  handler: (request: Request) => Response | Promise<Response>
-  api: {
-    getSession: (input: { headers: Headers }) => Promise<AuthSession | null>
-  }
-}
-
-type AuthRouteDependencies = {
-  auth: AuthService
-  allowedOrigins: string[]
-}
+import type { AuthRouteDependencies } from '../types/auth.js'
 
 export function installAuthRoutes<E extends Env, S extends Schema, BasePath extends string>(
   app: Hono<E, S, BasePath>,

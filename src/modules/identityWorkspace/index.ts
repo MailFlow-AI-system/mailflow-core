@@ -1,2 +1,3 @@
 export { createAuth } from './infrastructure/auth/createAuth.js'
-export { type AuthService, installAuthRoutes } from './infrastructure/auth/route.js'
+export { installAuthRoutes } from './infrastructure/auth/route.js'
+export type { AuthService } from './infrastructure/types/auth.js'

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { appEnvironmentSchema } from '#shared/config/appEnvironment'
 
 const origin = z.url({ protocol: /^https?$/ }).refine((value) => {
   const url = new URL(value)
@@ -14,7 +15,7 @@ const origin = z.url({ protocol: /^https?$/ }).refine((value) => {
 
 const authEnvironment = z
   .object({
-    APP_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
+    APP_ENV: appEnvironmentSchema.default('development'),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: origin,
     SITE_URL: origin,
@@ -23,7 +24,6 @@ const authEnvironment = z
   .refine(
     ({ APP_ENV, BETTER_AUTH_URL, SITE_URL, WEB_APP_URL }) =>
       APP_ENV === 'development' ||
-      APP_ENV === 'test' ||
       [BETTER_AUTH_URL, SITE_URL, WEB_APP_URL].every((value) => value.startsWith('https://')),
     'Authentication URLs must use HTTPS in staging and production',
   )

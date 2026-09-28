@@ -118,7 +118,7 @@ fi
   --name "${api_name}" \
   --network "${network_name}" \
   --publish "${api_publish}" \
-  --env APP_ENV=test \
+  --env APP_ENV=development \
   --env DATABASE_URL="${database_url}" \
   --env BETTER_AUTH_SECRET=0123456789abcdef0123456789abcdef \
   --env BETTER_AUTH_URL="http://localhost:${api_container_port}" \
@@ -132,7 +132,7 @@ fi
 "${docker_bin}" run --detach \
   --name "${worker_name}" \
   --network "${network_name}" \
-  --env APP_ENV=test \
+  --env APP_ENV=development \
   --env DATABASE_URL="${database_url}" \
   --env LOG_LEVEL=info \
   --env SERVICE_VERSION=smoke \

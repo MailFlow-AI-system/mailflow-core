@@ -1,11 +1,11 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
-import type { AuthService } from './modules/identityWorkspace/infrastructure/auth/route.js'
+import type { AuthService } from './modules/identityWorkspace/infrastructure/types/auth.js'
 import type { AppConfig } from './shared/config/env.js'
 
 const config: AppConfig = {
-  appEnv: 'test',
+  appEnv: 'development',
   databaseUrl: 'postgresql://postgres:postgres@localhost:5432/mailflow',
   host: '127.0.0.1',
   port: 8080,

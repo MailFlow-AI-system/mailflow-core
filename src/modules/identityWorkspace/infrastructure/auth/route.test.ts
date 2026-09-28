@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vitest'
 
-import { type AuthService, installAuthRoutes } from './route.js'
+import type { AuthService } from '../types/auth.js'
+import { installAuthRoutes } from './route.js'
 
 function createAuth(
   session: Awaited<ReturnType<AuthService['api']['getSession']>> = null,
