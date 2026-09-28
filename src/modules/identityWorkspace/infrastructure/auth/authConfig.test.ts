@@ -36,7 +36,7 @@ describe('loadAuthConfig', () => {
     ).toThrow()
   })
 
-  it('requires HTTPS outside local development and tests', () => {
+  it('requires HTTPS in staging and production', () => {
     expect(() => loadAuthConfig({ ...validEnvironment, APP_ENV: 'production' })).toThrow()
     expect(() =>
       loadAuthConfig({

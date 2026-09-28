@@ -1,9 +1,10 @@
 import { hostname } from 'node:os'
 
 import { z } from 'zod'
+import { type AppEnvironment, appEnvironmentSchema } from './appEnvironment.js'
 
 const rawConfigSchema = z.object({
-  APP_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
+  APP_ENV: appEnvironmentSchema.default('development'),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
@@ -16,7 +17,7 @@ const rawConfigSchema = z.object({
 })
 
 export type AppConfig = {
-  appEnv: z.infer<typeof rawConfigSchema>['APP_ENV']
+  appEnv: AppEnvironment
   databaseUrl: string
   host: string
   port: number

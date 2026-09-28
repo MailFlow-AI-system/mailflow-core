@@ -78,7 +78,7 @@ Infisical injects environment variables before a process starts. Application cod
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | — | PostgreSQL connection URL |
-| `APP_ENV` | No | `development` | `development`, `test`, `staging`, or `production` |
+| `APP_ENV` | No | `development` | `development`, `staging`, or `production` |
 | `HOST` | No | `0.0.0.0` | API bind address |
 | `PORT` | No | `8080` | API port |
 | `LOG_LEVEL` | No | `info` | Pino log level |
@@ -216,7 +216,7 @@ memberships, and MFA are not configured in this foundation.
 `SITE_URL` and `WEB_APP_URL` are validated as exact origins and are the only
 credentialed CORS origins for `/api/*`; the same values are Better Auth's
 `trustedOrigins`. `BETTER_AUTH_URL` is the API origin. Wildcards, paths,
-credentials, and non-HTTPS origins outside local development and tests are
+credentials, and non-HTTPS origins in staging and production are
 rejected. API resources under `/api/v1/*` require a valid Better Auth session.
 
 Only the API process loads `BETTER_AUTH_SECRET` through authentication

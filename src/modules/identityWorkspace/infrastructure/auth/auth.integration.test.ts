@@ -14,7 +14,7 @@ const describeIntegration = databaseUrl === undefined ? describe.skip : describe
 describeIntegration('Better Auth PostgreSQL lifecycle', () => {
   const email = `qa-auth-${randomUUID()}@mailflow.invalid`
   const authConfig = loadAuthConfig({
-    APP_ENV: 'test',
+    APP_ENV: 'development',
     BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
     BETTER_AUTH_URL: 'http://localhost:8080',
     SITE_URL: 'http://localhost:4321',
@@ -28,7 +28,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
   const auth = createAuth(database.database, authConfig)
   const app = createApp({
     config: {
-      appEnv: 'test',
+      appEnv: 'development',
       databaseUrl: databaseUrl ?? 'postgresql://invalid:invalid@localhost:5432/invalid',
       host: '127.0.0.1',
       port: 8080,
