@@ -36,6 +36,7 @@ describe('authentication HTTP integration', () => {
       headers: {
         Origin: 'http://localhost:3000',
         'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'content-type,traceparent,tracestate',
       },
     })
     const rejected = await app.request('/api/auth/get-session', {
@@ -48,6 +49,8 @@ describe('authentication HTTP integration', () => {
 
     expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:3000')
     expect(allowed.headers.get('access-control-allow-credentials')).toBe('true')
+    expect(allowed.headers.get('access-control-allow-headers')).toContain('traceparent')
+    expect(allowed.headers.get('access-control-allow-headers')).toContain('tracestate')
     expect(rejected.headers.get('access-control-allow-origin')).toBeNull()
   })
 

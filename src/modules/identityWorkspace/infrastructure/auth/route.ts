@@ -13,7 +13,7 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
     cors({
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : undefined),
       credentials: true,
-      allowHeaders: ['Content-Type'],
+      allowHeaders: ['Content-Type', 'traceparent', 'tracestate'],
       allowMethods: ['GET', 'POST', 'OPTIONS'],
     }),
   )
