@@ -50,6 +50,15 @@ describe('loadConfig', () => {
     expect(() => loadConfig({})).toThrow('DATABASE_URL')
   })
 
+  it('rejects test as an application environment', () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        APP_ENV: 'test',
+      }),
+    ).toThrow('APP_ENV')
+  })
+
   it('parses explicit values without truthy string coercion', () => {
     expect(
       loadConfig({
