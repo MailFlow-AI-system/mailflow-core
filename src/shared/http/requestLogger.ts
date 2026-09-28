@@ -13,6 +13,10 @@ import type { Logger } from 'pino'
 
 import type { Observability } from '../observability/observability.js'
 
+const durationHistogramBoundaries = [
+  0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+]
+
 export function requestLogger(logger: Logger, observability: Observability): MiddlewareHandler {
   const requestDuration: Histogram = observability.meter.createHistogram(
     'http.server.request.duration',
@@ -20,9 +24,21 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
       description: 'HTTP request duration.',
       unit: 's',
       advice: {
-        explicitBucketBoundaries: [
-          0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
-        ],
+        explicitBucketBoundaries: durationHistogramBoundaries,
+      },
+    },
+  )
+  const authOperationCount = observability.meter.createCounter('mailflow.auth.operation.count', {
+    description: 'Authentication operations completed.',
+    unit: '{operation}',
+  })
+  const authOperationDuration: Histogram = observability.meter.createHistogram(
+    'mailflow.auth.operation.duration',
+    {
+      description: 'Authentication operation duration.',
+      unit: 's',
+      advice: {
+        explicitBucketBoundaries: durationHistogramBoundaries,
       },
     },
   )
@@ -32,6 +48,8 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
     const startedAt = performance.now()
     const initialRoute = honoContext.req.routePath || 'unknown'
     const method = honoContext.req.method
+    const authOperation = getAuthOperation(method, honoContext.req.url)
+    let requestFailed = false
     const parentContext = propagation.extract(
       otelContext.active(),
       honoContext.req.raw.headers,
@@ -52,6 +70,7 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
       try {
         await next()
       } catch (error) {
+        requestFailed = true
         span.recordException({
           name: error instanceof Error ? error.name : 'UnknownError',
         })
@@ -74,6 +93,18 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
         span.setAttribute('http.route', route)
         span.setAttribute('http.response.status_code', status)
         requestDuration.record(durationSeconds, attributes)
+        if (authOperation !== undefined) {
+          const authResult = requestFailed
+            ? 'unavailable'
+            : await classifyAuthResult(authOperation, status, honoContext.res)
+          const authAttributes = {
+            'mailflow.auth.operation': authOperation,
+            'mailflow.auth.result': authResult,
+          }
+          authOperationCount.add(1, authAttributes)
+          authOperationDuration.record(durationSeconds, authAttributes)
+          span.setAttributes(authAttributes)
+        }
         if (status >= 500) {
           span.setStatus({ code: SpanStatusCode.ERROR })
         }
@@ -96,6 +127,42 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
         )
       }
     })
+  }
+}
+
+type AuthOperation = 'sign_up' | 'sign_in' | 'sign_out' | 'session_check'
+type AuthResult = 'success' | 'rejected' | 'failure' | 'unavailable'
+
+function getAuthOperation(method: string, requestUrl: string): AuthOperation | undefined {
+  const path = new URL(requestUrl).pathname
+  switch (`${method} ${path}`) {
+    case 'POST /api/auth/sign-up/email':
+      return 'sign_up'
+    case 'POST /api/auth/sign-in/email':
+      return 'sign_in'
+    case 'POST /api/auth/sign-out':
+      return 'sign_out'
+    case 'GET /api/auth/get-session':
+      return 'session_check'
+    default:
+      return undefined
+  }
+}
+
+async function classifyAuthResult(
+  operation: AuthOperation,
+  status: number,
+  response: Response,
+): Promise<AuthResult> {
+  if (status >= 500) return 'unavailable'
+  if (status >= 400) return 'rejected'
+  if (status < 200 || status >= 300) return 'failure'
+  if (operation !== 'session_check') return 'success'
+
+  try {
+    return (await response.clone().json()) === null ? 'rejected' : 'success'
+  } catch {
+    return 'failure'
   }
 }
 
