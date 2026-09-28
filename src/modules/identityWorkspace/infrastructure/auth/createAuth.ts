@@ -1,17 +1,19 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { betterAuth } from 'better-auth'
 import type { createDatabase } from '#shared/database/client'
-import * as schema from '../database/schema/auth.js'
+import { authAccount } from '../database/schema/auth/account.js'
+import { authSession } from '../database/schema/auth/session.js'
+import { authUser } from '../database/schema/auth/user.js'
+import { authVerification } from '../database/schema/auth/verification.js'
 import type { AuthConfig } from './authConfig.js'
 
 type Database = ReturnType<typeof createDatabase>['database']
 
 const authSchema = {
-  ...schema,
-  user: schema.authUser,
-  session: schema.authSession,
-  account: schema.authAccount,
-  verification: schema.authVerification,
+  user: authUser,
+  session: authSession,
+  account: authAccount,
+  verification: authVerification,
 }
 
 export function createAuth(database: Database, config: AuthConfig) {
