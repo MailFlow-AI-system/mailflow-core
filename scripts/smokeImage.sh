@@ -124,6 +124,8 @@ fi
   --env BETTER_AUTH_URL="http://localhost:${api_container_port}" \
   --env SITE_URL=http://localhost:4321 \
   --env WEB_APP_URL=http://localhost:3000 \
+  --env RESEND_API_KEY=re_smoke_placeholder \
+  --env RESEND_FROM_EMAIL=noreply@mailflow-ai.online \
   --env HOST=0.0.0.0 \
   --env PORT="${api_container_port}" \
   --env LOG_LEVEL=info \
