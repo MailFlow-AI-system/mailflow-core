@@ -39,7 +39,8 @@
     "db:migrate:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit migrate --config=database/configs/identityWorkspace.ts",
     "db:migrate:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit migrate --config=database/configs/mail.ts",
     "db:check:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/identityWorkspace.ts",
-    "db:check:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/mail.ts"
+    "db:check:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/mail.ts",
+    "email:dev": "email dev --dir src/modules/identityWorkspace/accountEmails/templates --port 4000"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.6",
@@ -57,13 +58,20 @@
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "pino-opentelemetry-transport": "^4.0.2",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-email": "^6.11.0",
+    "resend": "^6.30.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",
     "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@react-email/ui": "6.11.0",
     "@types/node": "^24.13.3",
     "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
