@@ -20,6 +20,13 @@ const authEnvironment = z
     BETTER_AUTH_URL: origin,
     SITE_URL: origin,
     WEB_APP_URL: origin,
+    RESEND_API_KEY: z.string().min(1),
+    RESEND_FROM_EMAIL: z
+      .email()
+      .refine(
+        (sender) => !sender.toLowerCase().endsWith('@resend.dev'),
+        'Authentication email sender must use a custom Resend domain, not resend.dev',
+      ),
   })
   .refine(
     ({ APP_ENV, BETTER_AUTH_URL, SITE_URL, WEB_APP_URL }) =>
@@ -39,6 +46,11 @@ export function loadAuthConfig(environment: Record<string, string | undefined>) 
     siteURL,
     webAppURL,
     allowedOrigins: [...new Set([siteURL, webAppURL])],
+    appEnv: parsed.APP_ENV,
+    resend: {
+      apiKey: parsed.RESEND_API_KEY,
+      from: parsed.RESEND_FROM_EMAIL,
+    },
   }
 }
 

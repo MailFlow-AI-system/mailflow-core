@@ -13,7 +13,9 @@ const authConfig = loadAuthConfig(process.env)
 const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
-const auth = createAuth(database.database, authConfig)
+const auth = createAuth(database.database, authConfig, undefined, (operation) =>
+  logger.error({ operation }, 'Account email delivery failed'),
+)
 const app = createApp({
   config,
   logger,

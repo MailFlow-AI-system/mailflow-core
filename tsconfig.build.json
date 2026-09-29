@@ -7,6 +7,6 @@
     "sourceMap": true,
     "inlineSources": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]
 }
