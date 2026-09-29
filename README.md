@@ -88,6 +88,8 @@ Infisical injects environment variables before a process starts. Application cod
 | `BETTER_AUTH_URL` | Yes for API | — | Exact API origin, locally `http://localhost:8080` |
 | `SITE_URL` | Yes for API | — | Exact Site origin, locally `http://localhost:4321` |
 | `WEB_APP_URL` | Yes for API | — | Exact Web origin, locally `http://localhost:3000` |
+| `RESEND_API_KEY` | Yes for API | — | Core-only API key used to send authentication email |
+| `RESEND_FROM_EMAIL` | Yes for API | — | Authentication email sender on a verified custom Resend domain. Core rejects `resend.dev` in every environment but does not query Resend to confirm domain status. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | — | Private Collector HTTP endpoint; absence disables telemetry safely |
 | `OTEL_TRACE_SAMPLE_RATE` | No | `0.1` | Ratio for sampled successful traces |
 | `OTEL_SERVICE_INSTANCE_ID` | No | Hostname and process ID | Stable process instance identity for telemetry |
@@ -136,6 +138,8 @@ There is intentionally no `drizzle-kit push` script. Database changes use genera
 | `GET /docs` | Swagger UI when API docs are enabled |
 | `POST /api/auth/sign-up/email` | Register a user with name, email, and password |
 | `POST /api/auth/sign-in/email` | Start a persistent, revocable session |
+| `POST /api/auth/request-password-reset` | Send a one-time, expiring password reset link |
+| `POST /api/auth/reset-password` | Consume a reset link and revoke existing sessions |
 | `GET /api/auth/get-session` | Read the current session |
 | `POST /api/auth/sign-out` | Revoke the current session |
 
@@ -210,14 +214,33 @@ Directories are added only with executable behavior. The capability map guides p
 Better Auth is mounted at `/api/auth` with its Drizzle adapter in the
 `identity_workspace` PostgreSQL schema. The initial capability is deliberately
 limited to email/password registration, login, persistent database sessions,
-session lookup, and logout. Password recovery, email delivery, workspaces,
-memberships, and MFA are not configured in this foundation.
+session lookup, logout, account email verification, and password recovery.
+Workspaces, memberships, and MFA are not configured in this foundation.
 
 `SITE_URL` and `WEB_APP_URL` are validated as exact origins and are the only
 credentialed CORS origins for `/api/*`; the same values are Better Auth's
 `trustedOrigins`. `BETTER_AUTH_URL` is the API origin. Wildcards, paths,
 credentials, and non-HTTPS origins in staging and production are
 rejected. API resources under `/api/v1/*` require a valid Better Auth session.
+
+Password recovery intentionally reveals account existence, as decided for this
+product flow. `POST /api/auth/request-password-reset` returns `404` with
+`ACCOUNT_NOT_FOUND` for an unregistered email, `200` only after the email
+provider accepts the request, and `503` with
+`PASSWORD_RESET_EMAIL_DELIVERY_FAILED` when sending fails. These responses do
+not include the submitted email, reset token, or provider error. A registered
+account can request one link every 60 seconds; this persistent quota is keyed
+by the internal user ID. A separate IP limit allows three requests per 60
+seconds and returns `429` with `X-Retry-After` in seconds when exceeded. Core
+uses Railway's `X-Real-IP`; the Web proxy does not forward browser-supplied IP
+headers. Clients sharing a Worker egress IP can share the IP quota. The
+PostgreSQL `identity_workspace.rate_limit` table is required, so apply
+`database/migrations/identityWorkspace/0001_add_better_auth_rate_limit.sql`
+before deploying the updated Core. An opt-in PostgreSQL test covers concurrent
+requests with distinct IPs; set `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL` to a
+dedicated migrated test database to run it. It was skipped here because no
+integration database was configured, so PostgreSQL concurrency remains
+unverified.
 
 Only the API process loads `BETTER_AUTH_SECRET` through authentication
 configuration. The worker does not load or use authentication configuration.
@@ -231,7 +254,7 @@ combined with cookies.
 
 ## Testing and delivery automation
 
-Tests execute on Node.js through Vitest. Current tests cover configuration validation, health behavior, RFC 9457 responses, and conditional OpenAPI/Swagger publication. PostgreSQL is represented by an injected readiness function in this foundation task; no remote database or secret is required by the test suite.
+Tests execute on Node.js through Vitest. The default suite needs no database; set `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL` to run opt-in PostgreSQL lifecycle tests against a dedicated migrated test database. Never point it at a development or production database.
 
 `bun run check` is the complete local quality gate:
 

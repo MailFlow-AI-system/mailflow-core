@@ -12,9 +12,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "customConditions": ["development"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "database/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "database/**/*.ts", "vitest.config.ts"],
   "exclude": ["dist", "node_modules"]
 }
