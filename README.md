@@ -223,24 +223,9 @@ credentialed CORS origins for `/api/*`; the same values are Better Auth's
 credentials, and non-HTTPS origins in staging and production are
 rejected. API resources under `/api/v1/*` require a valid Better Auth session.
 
-Password recovery intentionally reveals account existence, as decided for this
-product flow. `POST /api/auth/request-password-reset` returns `404` with
-`ACCOUNT_NOT_FOUND` for an unregistered email, `200` only after the email
-provider accepts the request, and `503` with
-`PASSWORD_RESET_EMAIL_DELIVERY_FAILED` when sending fails. These responses do
-not include the submitted email, reset token, or provider error. A registered
-account can request one link every 60 seconds; this persistent quota is keyed
-by the internal user ID. A separate IP limit allows three requests per 60
-seconds and returns `429` with `X-Retry-After` in seconds when exceeded. Core
-uses Railway's `X-Real-IP`; the Web proxy does not forward browser-supplied IP
-headers. Clients sharing a Worker egress IP can share the IP quota. The
-PostgreSQL `identity_workspace.rate_limit` table is required, so apply
-`database/migrations/identityWorkspace/0001_add_better_auth_rate_limit.sql`
-before deploying the updated Core. An opt-in PostgreSQL test covers concurrent
-requests with distinct IPs; set `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL` to a
-dedicated migrated test database to run it. It was skipped here because no
-integration database was configured, so PostgreSQL concurrency remains
-unverified.
+Password recovery reports whether an account exists and whether the provider
+accepted delivery, with per-account and trusted-IP rate limits. Responses omit
+the submitted email, reset token, and provider details.
 
 Only the API process loads `BETTER_AUTH_SECRET` through authentication
 configuration. The worker does not load or use authentication configuration.
