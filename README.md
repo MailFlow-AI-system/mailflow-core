@@ -94,6 +94,34 @@ Infisical injects environment variables before a process starts. Application cod
 
 `.env.example` documents the contract for tooling and local PostgreSQL experiments; it is not loaded by the application.
 
+### Deployed API frontend origins
+
+Set `SITE_URL` and `WEB_APP_URL` on each Core API runtime to the exact frontend
+origins for that environment:
+
+| Core API environment | `APP_ENV` | `SITE_URL` | `WEB_APP_URL` |
+| --- | --- | --- | --- |
+| Development | `development` | `https://site-dev.mailflow-ai.online` | `https://app-dev.mailflow-ai.online` |
+| Staging | `staging` | `https://site-staging.mailflow-ai.online` | `https://app-staging.mailflow-ai.online` |
+| Production | `production` | `https://mailflow-ai.online` | `https://app.mailflow-ai.online` |
+
+Provision the row that matches the API service's `APP_ENV`; `APP_ENV` does not
+select these domains automatically. Each API instance allows only the
+configured Site and Web origins for credentialed browser requests. Local
+development keeps the `http://localhost:4321` and
+`http://localhost:3000` values from `.env.example`. Keep `BETTER_AUTH_URL` set
+to the Core API's own exact origin for its environment; it is not either
+frontend URL. Configure no wildcard, obsolete `workers.dev`, or origins outside
+the matching environment row.
+
+The `bun run dev` scripts inject the `dev` Infisical environment at
+`/mailflow-core`. The production container does not include Infisical or load
+`.env` files: its runtime must provide these variables through the process
+environment (Railway service variables when Railway runs the container). The
+API reads them at startup, so restart or redeploy that API service after
+changing them. Merging this documentation does not change Infisical or Railway
+configuration.
+
 ## Commands
 
 | Command | Purpose |
@@ -217,7 +245,10 @@ memberships, and MFA are not configured in this foundation.
 credentialed CORS origins for `/api/*`; the same values are Better Auth's
 `trustedOrigins`. `BETTER_AUTH_URL` is the API origin. Wildcards, paths,
 credentials, and non-HTTPS origins in staging and production are
-rejected. API resources under `/api/v1/*` require a valid Better Auth session.
+rejected. The active API instance allows the values configured for its own
+environment as documented above; unrelated origins do not receive a CORS
+allow-origin response. API resources under `/api/v1/*` require a valid Better
+Auth session.
 
 Only the API process loads `BETTER_AUTH_SECRET` through authentication
 configuration. The worker does not load or use authentication configuration.
