@@ -31,6 +31,7 @@ function createTestApp(overrides: Partial<AppConfig> = {}) {
     checkDatabase: vi.fn().mockResolvedValue(undefined),
     auth,
     allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
+    mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
   })
 }
 

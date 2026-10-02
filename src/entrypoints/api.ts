@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server'
 import { createAuth } from '#modules/identityWorkspace'
+import { createMailMessageRepository } from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
 import { createLogger, shutdownLogger } from '#shared/logging/logger'
@@ -23,6 +24,7 @@ const app = createApp({
   checkDatabase: database.check,
   auth,
   allowedAuthOrigins: authConfig.allowedOrigins,
+  mailRepository: createMailMessageRepository(database.database),
 })
 
 const server = serve({
