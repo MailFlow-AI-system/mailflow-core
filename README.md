@@ -7,7 +7,7 @@ MailFlow Core is the Node.js backend for the MailFlow MVP. It produces two proce
 
 The project was initialized from Hono's official `create-hono` Node.js template and then adapted to the MailFlow architecture.
 
-The repository currently contains the executable foundation only. Business APIs and worker handlers are intentionally not stubbed ahead of their implementation.
+The repository contains the executable foundation, authentication, and the first global Inbox listing slice. Worker handlers are added with their owning business capabilities.
 
 ## Stack
 
@@ -123,9 +123,10 @@ bun run db:check:identity-workspace
 bun run db:check:mail
 bun run db:migrate:identity-workspace
 bun run db:migrate:mail
+bun run db:seed:mail
 ```
 
-Schema files and migration histories are created with the first database-backed business slice.
+Identity and Mail own separate schema files and migration histories. Apply the Mail migration before using the Inbox endpoint or running its seed.
 There is intentionally no `drizzle-kit push` script. Database changes use generated, reviewed, versioned SQL migrations.
 
 ## HTTP surface
@@ -142,10 +143,40 @@ There is intentionally no `drizzle-kit push` script. Database changes use genera
 | `POST /api/auth/reset-password` | Consume a reset link and revoke existing sessions |
 | `GET /api/auth/get-session` | Read the current session |
 | `POST /api/auth/sign-out` | Revoke the current session |
+| `GET /api/v1/mail/messages` | List eight messages from the authenticated global Inbox |
 
-Business endpoints will live below `/api/v1`.
+Business endpoints live below `/api/v1`.
 
 HTTP failures use RFC 9457 Problem Details with `application/problem+json`. Responses include the standard fields plus stable `code` and `requestId` extensions. Unexpected errors never expose stacks or internal details to clients.
+
+## Inbox listing
+
+`GET /api/v1/mail/messages` requires a valid Better Auth session. All authenticated users currently see the same global messages; messages have no user, owner, or workspace foreign key.
+
+The response contains complete stored bodies and ISO timestamps:
+
+```json
+{
+  "items": [
+    {
+      "id": "10000000-0000-4000-8000-000000000033",
+      "senderName": "Maya Thompson",
+      "subject": "October product planning notes",
+      "body": "Hi team,\n\nThe complete stored message body...",
+      "receivedAt": "2026-09-30T16:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+Pages contain at most eight messages, ordered by `receivedAt DESC, id DESC`. The query reads one extra row to determine whether another page exists. When `nextCursor` is present, pass it unchanged as `cursor`, retaining the same `q`. When it is `null`, pagination is complete. Empty inboxes return `items: []` and `nextCursor: null`. Malformed cursors return HTTP 400 with `code: invalid_message_cursor`; missing authentication returns HTTP 401.
+
+`q` is trimmed and matches a case-insensitive literal substring across `senderName`, `subject`, and the entire `body`, before pagination. Empty or whitespace-only search lists the unfiltered Inbox. Percent signs, underscores, and backslashes are literal characters. SQL parameters bind both the search pattern and cursor values. This is the initial substring search behavior; lexical search remains a separate future capability.
+
+The Mail migration creates `mail.message` and its descending timestamp/UUID index. Timestamps use millisecond precision so PostgreSQL ordering and JavaScript cursor values remain consistent. Migration history is stored separately in `mail_migrations`.
+
+The explicit `bun run db:seed:mail` command adds 33 fictional English messages to the Development database. Deterministic IDs make repeated runs idempotent: existing IDs are preserved, and unrelated messages are never deleted or updated. It does not create users or run during API startup, migration, or ordinary tests. A clean database yields four full pages and one partial page. The oldest message includes `AuroraLedger` beyond its preview, and other messages include literal `%`, `_`, and backslash search examples. The seed CLI constructs and closes its own database pool and logger.
 
 ## Architecture
 
@@ -153,12 +184,17 @@ The executable structure is intentionally small:
 
 ```text
 database/
-└── configs/                  # One Drizzle Kit config per owning module
+├── configs/                  # One Drizzle Kit config per owning module
+└── migrations/               # Separate module-owned migration histories
 src/
 ├── entrypoints/              # API and worker process composition
 ├── modules/
-│   └── system/
-│       └── health/           # Executable health vertical slice
+│   ├── identityWorkspace/    # Authentication and account emails
+│   ├── mail/
+│   │   ├── inbox/listMessages/ # Inbox contract, use case, and route
+│   │   ├── infrastructure/  # Mail repository and schema
+│   │   └── seed/            # Explicit fictional-data seed
+│   └── system/health/       # Executable health vertical slice
 └── shared/                   # Technical configuration, HTTP, DB, logging, runtime
 ```
 
@@ -239,7 +275,16 @@ combined with cookies.
 
 ## Testing and delivery automation
 
-Tests execute on Node.js through Vitest. The default suite needs no database; set `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL` to run opt-in PostgreSQL lifecycle tests against a dedicated migrated test database. Never point it at a development or production database.
+Tests execute on Node.js through Vitest. The default suite needs no database and visibly skips opt-in PostgreSQL tests. Set `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL` for authentication lifecycle tests and `MAILFLOW_MAIL_INTEGRATION_DATABASE_URL` for Inbox integration tests, each pointing at a dedicated migrated test database. Never point these variables at Development, Staging, or Production databases.
+
+Mail integration tests run their fixtures inside rolled-back transactions. They verify pagination and timestamp ties, partial and empty pages, full-body search beyond the first page, literal SQL wildcard characters, malformed cursors, authentication, database failures, and seed idempotency without changing unrelated records. The HTTP authentication dependency is controlled in these tests; real Better Auth session lifecycle coverage uses the separate authentication integration suite.
+
+To run Inbox tests against an isolated PostgreSQL database without Infisical, inject its URL into the tool process:
+
+```bash
+DATABASE_URL="$MAILFLOW_MAIL_INTEGRATION_DATABASE_URL" bunx drizzle-kit migrate --config=database/configs/mail.ts
+bun run test src/modules/mail
+```
 
 `bun run check` is the complete local quality gate:
 
@@ -275,3 +320,11 @@ The worker records startup and shutdown; job metrics await actual job handlers.
 The MVP remains a modular Core with separate API and worker processes. Audience is the first planned bounded-context extraction. That milestone introduces a thin Gateway/BFF and RabbitMQ after its equivalence gate; Redis remains independently activated only for a proven low-latency ephemeral-state workload. Later services are extracted only for measured ownership, scaling, reliability, or release needs.
 
 The complete architecture, decisions, trade-offs, and diagrams live in the [MailFlow Architecture Hub](https://mailflow-architecture-hub.vercel.app/).
+
+## Listening
+
+The first Inbox slice intentionally uses a temporary global message model: every authenticated user sees the same records. User ownership, workspace membership filtering, and cross-module foreign keys were not introduced because the agreed scope requires shared visibility. Tenant isolation must be designed explicitly before changing this contract.
+
+Literal case-insensitive substring search was selected for a predictable initial search across sender, subject, and full body. Lexical ranking and tokenization were deferred because they change matching behavior and require a separate product decision. The ordered timestamp/UUID cursor replaces offset pagination to preserve deterministic boundaries when timestamps tie. Millisecond timestamp precision keeps those boundaries representable by the application's Date values.
+
+The opt-in seed inserts deterministic fictional messages and preserves existing rows on conflict. It is an explicit operational command so loading examples remains separate from applying schema migrations and starting the service.

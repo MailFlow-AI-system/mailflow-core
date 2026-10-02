@@ -40,6 +40,7 @@
     "db:migrate:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit migrate --config=database/configs/mail.ts",
     "db:check:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/identityWorkspace.ts",
     "db:check:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/mail.ts",
+    "db:seed:mail": "infisical run --env=dev --path=/mailflow-core -- tsx --conditions=development src/modules/mail/seed/run.ts",
     "email:dev": "email dev --dir src/modules/identityWorkspace/accountEmails/templates --port 4000"
   },
   "dependencies": {
