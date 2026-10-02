@@ -68,6 +68,7 @@ describe('request telemetry', () => {
       checkDatabase: vi.fn().mockResolvedValue(undefined),
       auth,
       allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
+      mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
     })
 
     const response = await app.request('/health/live', {
@@ -174,6 +175,7 @@ describe('request telemetry', () => {
       checkDatabase: vi.fn().mockResolvedValue(undefined),
       auth,
       allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
+      mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
     })
     app.get('/failure/:email', () => {
       throw new Error('email body must never leave the request')
@@ -277,6 +279,7 @@ describe('request telemetry', () => {
       checkDatabase: vi.fn().mockResolvedValue(undefined),
       auth,
       allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
+      mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
     })
 
     await app.request('/api/auth/sign-up/email', {
