@@ -1,0 +1,212 @@
+import type { MailMessage } from '../inbox/listMessages/types.js'
+
+const content: [senderName: string, subject: string, opening: string, followUp: string][] = [
+  [
+    'Maya Thompson',
+    'October product planning notes',
+    'I have consolidated the priorities from our planning session. The first release will focus on a reliable inbox, clear search results, and a straightforward way to open the full message without leaving the list.',
+    'Please review the acceptance criteria before Thursday and add any missing customer examples. We will use the same document during the demo so everyone can connect the implementation to the original feedback.',
+  ],
+  [
+    'Liam Chen',
+    'Your workspace reservation is confirmed',
+    'The Cedar meeting room is reserved for our team on Friday from nine until eleven. Reception has the guest list, and the room includes a display, a whiteboard, and the equipment requested for the remote participants.',
+    'Please arrive ten minutes early so we can check the audio before the first presentation. If your travel plans change, reply to this message and I will update the reservation with the building coordinator.',
+  ],
+  [
+    'Olivia Brooks',
+    'September support themes and follow-up',
+    'The support review is ready for the product team. Customers most often asked about finding older messages, keeping their place after opening an email, and understanding whether a search includes the complete message body.',
+    'I have included anonymized examples and the next steps agreed with each customer. Please let me know which issues we can close this week so the support team can send accurate updates before the monthly review.',
+  ],
+  [
+    'Ethan Rivera',
+    'Updated delivery schedule for the design assets',
+    'The revised design assets will be available tomorrow afternoon. We have completed the desktop screens and are checking the smaller layouts with longer subjects, multiline message content, and the expected empty states.',
+    'The delivery includes the component inventory and the notes from our accessibility review. Please flag any implementation questions in the shared document, and we can resolve them together during the handoff.',
+  ],
+  [
+    'Sofia Patel',
+    'Invoice review for September services',
+    'The September invoice is ready for review. It includes the agreed service hours, the support adjustment from last month, and the approved infrastructure expenses. Each line has a reference to the corresponding purchase request.',
+    'Please confirm the billing contact and the payment date before I send the final copy to finance. If any item needs clarification, reply with its reference number and I will provide the supporting documentation.',
+  ],
+  [
+    'Noah Bennett',
+    'Forecast assumptions for the next quarter',
+    'The updated forecast assumes a 12% increase in qualified inquiries during the next quarter. This estimate uses the current pipeline and the planned campaign schedule, with the same conversion assumptions we reviewed last week.',
+    'Please check the capacity assumptions for your team before Wednesday. We can adjust the allocation during the planning meeting, but I would like to resolve any differences before we circulate the final forecast.',
+  ],
+  [
+    'Amelia Stone',
+    'Brand review: revised welcome email copy',
+    'The welcome email copy now reflects the wording agreed in our brand review. We shortened the introduction, clarified the first action, and removed the terms that caused confusion during the customer interviews.',
+    'Please review the tone and the link labels alongside the latest screen designs. Once we have your approval, I will share the final text with the implementation team and record the decision in the content guide.',
+  ],
+  [
+    'Lucas Reed',
+    'Training session agenda and preparation',
+    'Our training session will cover the inbox workflow, searching for historical correspondence, and reading longer messages. We will begin with a short demonstration and then leave enough time for participants to try the tasks themselves.',
+    'Please bring one realistic example from your day-to-day work. We will use those examples in the practice session and collect any questions that need a follow-up explanation after the training has finished.',
+  ],
+  [
+    'Isabella Ward',
+    'Supplier confirmation for the workshop',
+    "The supplier has confirmed the materials for next week's workshop. The shipment includes the printed agendas, the participant workbooks, and the presentation boards. Delivery is scheduled for Monday before the office opens.",
+    'Please check the package count against the order when the shipment arrives. If anything is missing, send me a photo of the delivery note so I can arrange a replacement before the workshop begins.',
+  ],
+  [
+    'James Parker',
+    'Performance review meeting moved to Tuesday',
+    'The performance review meeting has moved to Tuesday afternoon because two team leads will be traveling on Monday. The agenda and the reporting period are unchanged, and the updated invitation includes the new video conference link.',
+    "Please refresh your team's notes before the meeting and mark any open decisions clearly. We will start with the operational results and use the remaining time to agree on the priorities for the coming month.",
+  ],
+  [
+    'Charlotte Evans',
+    'Final invoice attachment for approval',
+    'I have prepared the final invoice document under the filename invoice_final.pdf. The figures match the approved purchase order, and the billing address now includes the department information requested by your finance team.',
+    'Please review the payment instructions and confirm that the invoice can be released. I will keep the supporting records with the order so we can answer any questions raised during the next reconciliation.',
+  ],
+  [
+    'Benjamin Hayes',
+    'Customer interview schedule for next week',
+    'The customer interview schedule is complete for next week. We have sessions with administrators, support specialists, and occasional users so we can compare the way each group finds and reads incoming correspondence.',
+    'Please add any follow-up questions to the interview guide by tomorrow afternoon. I will send the final guide to the facilitators and make sure the participants receive a reminder before their scheduled sessions.',
+  ],
+  [
+    'Harper Morgan',
+    'Office maintenance notice for Wednesday',
+    'Building maintenance will inspect the office network equipment on Wednesday evening. The work is scheduled outside business hours, but the facilities team has asked us to keep the equipment cabinets accessible.',
+    'Please save any work in progress before leaving and avoid moving the temporary access signs. I will send a confirmation once the inspection is complete and let the team know if the schedule changes.',
+  ],
+  [
+    'Henry Scott',
+    'Release checklist ready for review',
+    'The release checklist is ready for the engineering review. It covers the database migration, application configuration, the expected inbox response, and the validation steps we will run before announcing the change to the team.',
+    'Please record the result of each check with its supporting evidence. We should resolve any open items during the release meeting so the deployment owner has a complete view of the remaining work.',
+  ],
+  [
+    'Evelyn Clark',
+    'Updated onboarding guide for new colleagues',
+    'The onboarding guide now includes the steps for joining the team workspace and locating the shared reference material. I have also added a short explanation of the support process and the contacts for common access questions.',
+    "Please review the instructions from a new colleague's perspective and flag anything that assumes prior knowledge. We will include the final guide in next month's welcome package after the team has checked it.",
+  ],
+  [
+    'Alexander Green',
+    'Shipment tracking for the replacement equipment',
+    'The replacement equipment has been dispatched and is expected to arrive on Thursday. The courier will contact reception before delivery, and the package reference is recorded with the original equipment request.',
+    'Please keep the damaged unit available for collection and do not remove its inventory label. Once the replacement is installed, reply to this message so we can close the request and update the equipment register.',
+  ],
+  [
+    'Abigail Ross',
+    'Campaign content review before publication',
+    'The campaign content is ready for its final review. We have checked the message sequence, the landing page copy, and the confirmation text so customers receive consistent information throughout the registration process.',
+    'Please review the dates and the product descriptions before the publication window. If you suggest a wording change, include the reason so the content team can make the update consistently across all campaign materials.',
+  ],
+  [
+    'Daniel Lewis',
+    'Network export location for the audit records',
+    'The audit exports are available in the shared Windows folder C:\\Exports. The files contain the approved reporting period and the supporting access records requested by the auditor, with personal notes excluded from the export.',
+    'Please confirm that the audit team can open the files and that the reporting dates are correct. I will keep the originals in the internal archive until the review is complete and the retention period has been confirmed.',
+  ],
+  [
+    'Emily Foster',
+    'Feedback from the first customer walkthrough',
+    'The first customer walkthrough produced useful feedback about the inbox layout. Participants found the sender and subject easy to scan, but they asked us to preserve their scroll position when they open and close a longer message.',
+    'Please review the observation notes before the next design session. I have separated the direct customer comments from our interpretation so we can discuss the evidence without losing the context of each task.',
+  ],
+  [
+    'Matthew Price',
+    'Security awareness session materials',
+    'The materials for the security awareness session are ready. The examples focus on suspicious requests, unexpected attachments, and the process for reporting a message that asks a colleague to share confidential information.',
+    'Please review the examples and confirm that the reporting contacts are current. We will use fictional messages during the session and give participants a reference sheet they can keep beside their everyday work.',
+  ],
+  [
+    'Elizabeth Turner',
+    'Travel arrangements for the regional meeting',
+    'The travel arrangements for the regional meeting have been confirmed. The hotel booking includes the agreed arrival date, and the meeting venue has received the accessibility requirements supplied by the participants.',
+    'Please review your itinerary and reply if your arrival time changes. I will circulate the final attendee list to the venue once everyone has confirmed their details and the transport coordinator has checked the schedule.',
+  ],
+  [
+    'William Carter',
+    'Documentation updates from the architecture review',
+    'The documentation now includes the decisions from the architecture review. It explains the module boundaries, the ownership of database tables, and the responsibilities of the application processes during startup and shutdown.',
+    'Please check the examples against the current implementation and flag any statement that needs stronger evidence. We will keep the document aligned with executable behavior as each new capability is introduced.',
+  ],
+  [
+    'Avery Collins',
+    'Accessibility review observations',
+    'The accessibility review notes are available for the interface team. We checked keyboard access, focus visibility, headings, and the reading order when a message opens. The review also covered the empty inbox and loading feedback.',
+    'Please attach the verification evidence when each observation is resolved. I would like to repeat the affected tasks with the updated build before we mark the review complete and share the outcome with the product team.',
+  ],
+  [
+    'Michael Hughes',
+    'Purchase request approved for the new monitors',
+    'The purchase request for the new monitors has been approved. The supplier quote includes the required connection cables and the agreed warranty, and the order is ready to be released once the delivery address is confirmed.',
+    'Please confirm which desk locations will receive the equipment and whether any existing monitors should be returned to storage. I will include those details in the delivery instructions and the inventory update.',
+  ],
+  [
+    'Ella Simmons',
+    'Research summary: finding older correspondence',
+    'The research summary describes how customers search for older correspondence. Several participants remembered a phrase from the message rather than its subject, and others searched by the name of the person who originally sent it.',
+    'Please review the examples before we define the next search improvements. For the first delivery, we should make the current behavior clear and verify that searches include the complete stored body rather than only a preview.',
+  ],
+  [
+    'David Ramirez',
+    'Service window confirmed for the reporting system',
+    'The reporting system maintenance window is confirmed for Saturday morning. The operations team has completed the preparation checks, and the service owner will monitor the database connection and the application health throughout the work.',
+    'Please complete any urgent exports before Friday afternoon. We will send a completion notice once the system is available again and include the validation results in the maintenance record for future reference.',
+  ],
+  [
+    'Grace Nelson',
+    'Community event invitation and volunteer briefing',
+    'The community event invitation is ready to send to registered participants. It includes the arrival instructions, the session schedule, and the contact details for the volunteer team supporting the venue on the day.',
+    'Please read the volunteer briefing before the coordination call and let me know if you need a different assignment. We will confirm the final roles after checking the expected attendance and the equipment delivery schedule.',
+  ],
+  [
+    'Joseph Murphy',
+    'Contract renewal discussion for the support service',
+    'The support service contract is due for renewal next month. I have prepared a summary of the current terms, the response targets, and the issues raised during the most recent service review so we can discuss the changes with the supplier.',
+    'Please add any operational requirements that should be included in the renewal. We can agree on the negotiation priorities during the review meeting and then ask the supplier for an updated proposal.',
+  ],
+  [
+    'Chloe Adams',
+    'Editorial calendar for the autumn newsletter',
+    'The autumn newsletter calendar is ready for review. The proposed articles cover the product update, customer workflow tips, and the upcoming training sessions, with enough time allocated for editing and stakeholder approval.',
+    'Please confirm your article owner and the first draft date by the end of the week. I will adjust the publication schedule once we have the commitments and share the final calendar with the design team.',
+  ],
+  [
+    'Samuel Mitchell',
+    'Database restore rehearsal results',
+    'The database restore rehearsal completed successfully in the isolated test environment. We checked the migration history, the application connection, and a sample of the restored records before recording the time needed to make the service available.',
+    'Please review the remaining documentation items in the rehearsal notes. The next exercise will use the same checklist so we can compare the results and identify any steps that still depend on undocumented knowledge.',
+  ],
+  [
+    'Victoria Bailey',
+    'Partnership meeting notes and agreed actions',
+    'The partnership meeting notes are ready for both teams. We recorded the proposed pilot scope, the information needed from each organization, and the decisions that must be made before the first shared customer workshop.',
+    'Please check the action owners and reply with any corrections before I circulate the final notes. We will use the agreed actions to prepare the next meeting and avoid repeating topics that already have a clear decision.',
+  ],
+  [
+    'Andrew Cooper',
+    'Monthly reconciliation documents available',
+    'The monthly reconciliation documents are available for the finance review. They include the approved invoices, the payment confirmations, and the explanations for the timing differences identified during the preliminary check.',
+    'Please confirm that each exception has an owner before the closing meeting. I will keep the supporting references with the reconciliation package so the review can be completed without asking the operations team to recreate the history.',
+  ],
+  [
+    'Natalie Dawson',
+    'Historical project archive and reconciliation notes',
+    'I have completed the historical project archive review and reconciled the remaining references with the original delivery notes. The archive contains the meeting decisions, the approved supplier correspondence, and the explanations for the adjustments made during the final reporting period. Each record now has enough context for a colleague to understand the decision without needing access to the original discussion.',
+    'The internal reference AuroraLedger identifies the final reconciliation package. Please use that reference when asking about the historical records, and include the reporting month so I can locate the correct supporting documents. We will keep this package available for the next review.',
+  ],
+]
+
+export const seedMailMessages: MailMessage[] = content.map(
+  ([senderName, subject, opening, followUp], index) => ({
+    id: `10000000-0000-4000-8000-${String(33 - index).padStart(12, '0')}`,
+    senderName,
+    subject,
+    body: `Hi team,\n\n${opening}\n\n${followUp}\n\nBest,\n${senderName}`,
+    receivedAt: new Date(Date.UTC(2026, 8, 30, 16, 0, -Math.floor(index / 3) * 3600)),
+  }),
+)
