@@ -1,15 +1,18 @@
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
-export type ProblemDetailsInput = {
+export type ProblemDetailsInput<Status extends ContentfulStatusCode = ContentfulStatusCode> = {
   type?: string
   title: string
-  status: ContentfulStatusCode
+  status: Status
   detail: string
   code: string
 }
 
-export function problemDetailsResponse(context: Context, problem: ProblemDetailsInput) {
+export function problemDetailsResponse<Status extends ContentfulStatusCode>(
+  context: Context,
+  problem: ProblemDetailsInput<Status>,
+) {
   return context.json(
     {
       type: problem.type ?? 'about:blank',
