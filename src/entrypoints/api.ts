@@ -3,6 +3,9 @@ import {
   assertWorkspaceDatabaseRole,
   createAuth,
   createDiscoveryBudget,
+  createOnboardingBudget,
+  createOnboardingOtpHandler,
+  createOnboardingService,
   createWorkspaceReader,
   workspaceReadsEnabled,
 } from '#modules/identityWorkspace'
@@ -14,6 +17,14 @@ import { startObservability } from '#shared/observability/observability'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 import { createApp } from '../app.js'
 import { loadAuthConfig } from '../modules/identityWorkspace/infrastructure/auth/authConfig.js'
+import { assertOnboardingDatabaseRole } from '../modules/identityWorkspace/onboarding/databaseRole.js'
+import {
+  loadWorkspaceWebBaseOrigin,
+  onboardingEnabled,
+  signupCutoverEnabled,
+} from '../modules/identityWorkspace/onboarding/runtimeConfig.js'
+import { createOnboardingCipher } from '../modules/identityWorkspace/onboarding/utils/cipher.js'
+import { createProtectedOtpStorage } from '../modules/identityWorkspace/onboarding/utils/otpStorage.js'
 
 const config = loadConfig(process.env)
 const authConfig = loadAuthConfig(process.env)
@@ -21,9 +32,19 @@ const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
 const enableWorkspaceReads = workspaceReadsEnabled(process.env)
+const enableOnboarding = onboardingEnabled(process.env)
+const closeLegacySignup = signupCutoverEnabled(process.env)
+const webBaseOrigin = enableOnboarding ? loadWorkspaceWebBaseOrigin(process.env) : undefined
 if (enableWorkspaceReads) await assertWorkspaceDatabaseRole(database.pool)
-const auth = createAuth(database.database, authConfig, undefined, (operation) =>
-  logger.error({ operation }, 'Account email delivery failed'),
+if (enableOnboarding) await assertOnboardingDatabaseRole(database.pool)
+const auth = createAuth(
+  database.database,
+  authConfig,
+  undefined,
+  (operation) => logger.error({ operation }, 'Account email delivery failed'),
+  enableOnboarding
+    ? { otpStorage: createProtectedOtpStorage(createOnboardingCipher(authConfig.secret)) }
+    : {},
 )
 const app = createApp({
   config,
@@ -33,6 +54,17 @@ const app = createApp({
   auth,
   allowedAuthOrigins: authConfig.allowedOrigins,
   mailRepository: createMailMessageRepository(database.database),
+  ...(webBaseOrigin
+    ? {
+        onboarding: {
+          service: createOnboardingService(database.pool, authConfig),
+          handleOtp: createOnboardingOtpHandler(database.pool, authConfig, webBaseOrigin),
+          allowedOrigin: authConfig.siteURL,
+          consumeBudget: createOnboardingBudget(database.pool, authConfig.secret),
+          closeLegacySignup,
+        },
+      }
+    : {}),
   ...(enableWorkspaceReads
     ? {
         workspaces: {

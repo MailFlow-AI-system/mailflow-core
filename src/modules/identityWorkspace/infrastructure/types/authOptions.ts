@@ -1,6 +1,14 @@
-import type { createDatabase } from '#shared/database/client'
+import type { BetterAuthOptions } from 'better-auth'
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 
-export type AuthDatabase = ReturnType<typeof createDatabase>['database']
+export type AuthDatabase = NodePgDatabase
+export type AuthProvisioningOptions = {
+  generateId?: NonNullable<NonNullable<BetterAuthOptions['advanced']>['database']>['generateId']
+  otpStorage?: {
+    encrypt: (value: string) => Promise<string>
+    decrypt: (value: string) => Promise<string>
+  }
+}
 export type AuthEmailFailureReporter = (operation: 'account-welcome' | 'password-reset') => void
 export type PasswordResetDeliveryInput = {
   user: { email: string; name: string }

@@ -33,7 +33,7 @@ export function createAccountEmailSender(
   config: Pick<AuthConfig, 'resend'>,
   transport: AccountEmailTransport = createResendTransport(config.resend.apiKey),
 ): AccountEmailSender {
-  return async (message) => {
+  return async (message, deliveryOptions) => {
     let subject: string
     let html: string
     let text: string
@@ -73,7 +73,7 @@ export function createAccountEmailSender(
         html,
         text,
       },
-      options,
+      deliveryOptions ?? options,
     )
   }
 }
