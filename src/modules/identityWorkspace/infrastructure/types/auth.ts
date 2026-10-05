@@ -13,4 +13,5 @@ export type AuthService = {
 export type AuthRouteDependencies = {
   auth: AuthService
   allowedOrigins: string[]
+  onboarding?: { handleOtp: (request: Request) => Promise<Response>; closeLegacySignup?: boolean }
 }

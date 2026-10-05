@@ -4,7 +4,11 @@ import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 
-import { createWorkspaceRoutes, installAuthRoutes } from '#modules/identityWorkspace'
+import {
+  createOnboardingRoutes,
+  createWorkspaceRoutes,
+  installAuthRoutes,
+} from '#modules/identityWorkspace'
 import { createMailModule } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
@@ -20,16 +24,22 @@ export function createApp({
   allowedAuthOrigins,
   mailRepository,
   workspaces,
+  onboarding,
   observability = createNoopObservability('mailflow-core-api'),
 }: AppDependencies) {
   const app = new OpenAPIHono()
 
   app.use('*', requestId(), secureHeaders(), requestLogger(logger, observability))
 
-  installAuthRoutes(app, { auth, allowedOrigins: allowedAuthOrigins })
+  installAuthRoutes(app, {
+    auth,
+    allowedOrigins: allowedAuthOrigins,
+    ...(onboarding ? { onboarding } : {}),
+  })
   app.route('/', createHealthModule({ checkDatabase }))
   if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
   if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
+  if (onboarding) app.route('/', createOnboardingRoutes(onboarding))
 
   if (config.apiDocsEnabled) {
     app.doc('/openapi.json', {

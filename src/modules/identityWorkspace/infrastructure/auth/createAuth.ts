@@ -12,6 +12,7 @@ import { workspace, workspaceInvitation, workspaceMember } from '../database/sch
 import type {
   AuthDatabase,
   AuthEmailFailureReporter,
+  AuthProvisioningOptions,
   PasswordResetDeliveryInput,
   PasswordResetRateLimit,
   VerificationStatusUser,
@@ -40,6 +41,7 @@ export function createAuth(
   config: AuthConfig,
   sendAccountEmail: AccountEmailSender = createAccountEmailSender(config),
   reportEmailDeliveryFailure: AuthEmailFailureReporter = () => {},
+  provisioning: AuthProvisioningOptions = {},
 ) {
   return betterAuth({
     database: drizzleAdapter(database, {
@@ -47,7 +49,7 @@ export function createAuth(
       schema: authSchema,
       schemaName: 'identity_workspace',
     }),
-    ...createAuthOptions(config, sendAccountEmail, reportEmailDeliveryFailure),
+    ...createAuthOptions(config, sendAccountEmail, reportEmailDeliveryFailure, provisioning),
   })
 }
 
@@ -55,6 +57,7 @@ export function createAuthOptions(
   config: AuthConfig,
   sendAccountEmail: AccountEmailSender,
   reportEmailDeliveryFailure: AuthEmailFailureReporter = () => {},
+  provisioning: AuthProvisioningOptions = {},
 ) {
   const failedPasswordResetRequests = new WeakMap<Request, string>()
 
@@ -77,6 +80,7 @@ export function createAuthOptions(
     },
     advanced: {
       ipAddress: { ipAddressHeaders: ['x-real-ip'] },
+      ...(provisioning.generateId ? { database: { generateId: provisioning.generateId } } : {}),
     },
     emailAndPassword: {
       enabled: true,
@@ -135,6 +139,7 @@ export function createAuthOptions(
     plugins: [
       organization({ allowUserToCreateOrganization: false, disableOrganizationDeletion: true }),
       emailOTP({
+        ...(provisioning.otpStorage ? { storeOTP: provisioning.otpStorage } : {}),
         allowedAttempts: 3,
         disableSignUp: true,
         expiresIn: 5 * 60,

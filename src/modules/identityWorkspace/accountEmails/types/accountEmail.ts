@@ -24,4 +24,7 @@ export type AccountEmailTransport = (
   options?: AccountEmailDeliveryOptions,
 ) => Promise<void>
 
-export type AccountEmailSender = (message: AccountEmailMessage) => Promise<void>
+export type AccountEmailSender = (
+  message: AccountEmailMessage,
+  options?: AccountEmailDeliveryOptions,
+) => Promise<void>

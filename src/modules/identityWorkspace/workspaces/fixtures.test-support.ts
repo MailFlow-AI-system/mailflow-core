@@ -19,18 +19,28 @@ export async function createWorkspaceTestFixture() {
     throw new Error('Workspace tests require the dedicated local mailflow_workspace_test database')
   }
   const admin = new Pool({ connectionString: value, max: 3 })
-  await migrate(drizzle(admin), {
-    migrationsFolder: './database/migrations/identityWorkspace',
-    migrationsSchema: 'identity_workspace_migrations',
-    migrationsTable: '__drizzle_migrations',
-  })
-  await admin.query(`DO $$ BEGIN
+  const migrationLock = await admin.connect()
+  try {
+    await migrationLock.query('select pg_advisory_lock(77193022)')
+    await migrate(drizzle(admin), {
+      migrationsFolder: './database/migrations/identityWorkspace',
+      migrationsSchema: 'identity_workspace_migrations',
+      migrationsTable: '__drizzle_migrations',
+    })
+    await admin.query(`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'workspace_test_app') THEN
       CREATE ROLE workspace_test_app LOGIN PASSWORD 'workspace_app_local_only' NOSUPERUSER NOBYPASSRLS;
     END IF;
   END $$;
   GRANT USAGE ON SCHEMA identity_workspace TO workspace_test_app;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace TO workspace_test_app;`)
+  } finally {
+    try {
+      await migrationLock.query('select pg_advisory_unlock(77193022)')
+    } finally {
+      migrationLock.release()
+    }
+  }
   url.username = 'workspace_test_app'
   url.password = 'workspace_app_local_only'
   const pool = new Pool({ connectionString: url.href, max: 2, statement_timeout: 2000 })
@@ -111,7 +121,7 @@ export async function createWorkspaceTestFixture() {
           [user.user.id, otherId],
         ])
         await admin.query('delete from identity_workspace.verification where identifier = $1', [
-          email,
+          `email-verification-otp-${email}`,
         ])
         await admin.query('delete from identity_workspace.rate_limit where key = $1', [
           `workspace-discovery:${user.user.id}`,
