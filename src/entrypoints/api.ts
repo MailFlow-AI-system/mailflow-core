@@ -1,12 +1,15 @@
 import { serve } from '@hono/node-server'
 import {
   assertWorkspaceDatabaseRole,
+  assertWorkspaceSelectionDatabaseRole,
   createAuth,
   createDiscoveryBudget,
   createOnboardingBudget,
   createOnboardingOtpHandler,
   createOnboardingService,
   createWorkspaceReader,
+  createWorkspaceSelection,
+  workspaceLocalSwitchingEnabled,
   workspaceReadsEnabled,
 } from '#modules/identityWorkspace'
 import { createMailMessageRepository } from '#modules/mail'
@@ -32,19 +35,24 @@ const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
 const enableWorkspaceReads = workspaceReadsEnabled(process.env)
+const enableWorkspaceSelection = workspaceLocalSwitchingEnabled(process.env)
 const enableOnboarding = onboardingEnabled(process.env)
 const closeLegacySignup = signupCutoverEnabled(process.env)
 const webBaseOrigin = enableOnboarding ? loadWorkspaceWebBaseOrigin(process.env) : undefined
 if (enableWorkspaceReads) await assertWorkspaceDatabaseRole(database.pool)
+if (enableWorkspaceSelection) await assertWorkspaceSelectionDatabaseRole(database.pool)
 if (enableOnboarding) await assertOnboardingDatabaseRole(database.pool)
 const auth = createAuth(
   database.database,
   authConfig,
   undefined,
   (operation) => logger.error({ operation }, 'Account email delivery failed'),
-  enableOnboarding
-    ? { otpStorage: createProtectedOtpStorage(createOnboardingCipher(authConfig.secret)) }
-    : {},
+  {
+    ...(enableOnboarding
+      ? { otpStorage: createProtectedOtpStorage(createOnboardingCipher(authConfig.secret)) }
+      : {}),
+    ...(enableWorkspaceSelection ? { localWorkspaceCookie: true } : {}),
+  },
 )
 const app = createApp({
   config,
@@ -54,6 +62,15 @@ const app = createApp({
   auth,
   allowedAuthOrigins: authConfig.allowedOrigins,
   mailRepository: createMailMessageRepository(database.database),
+  ...(enableWorkspaceSelection
+    ? {
+        workspaceSelection: {
+          selection: createWorkspaceSelection(database.pool),
+          allowedOrigins: authConfig.allowedOrigins,
+          consumeBudget: createDiscoveryBudget(database.pool),
+        },
+      }
+    : {}),
   ...(webBaseOrigin
     ? {
         onboarding: {

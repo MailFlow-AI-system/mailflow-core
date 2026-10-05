@@ -7,9 +7,10 @@ import { secureHeaders } from 'hono/secure-headers'
 import {
   createOnboardingRoutes,
   createWorkspaceRoutes,
+  createWorkspaceSelectionRoutes,
   installAuthRoutes,
 } from '#modules/identityWorkspace'
-import { createMailModule } from '#modules/mail'
+import { blockGlobalWorkspaceMail, createMailModule } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
@@ -25,6 +26,7 @@ export function createApp({
   mailRepository,
   workspaces,
   onboarding,
+  workspaceSelection,
   observability = createNoopObservability('mailflow-core-api'),
 }: AppDependencies) {
   const app = new OpenAPIHono()
@@ -37,9 +39,12 @@ export function createApp({
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
+  if (workspaces || onboarding || workspaceSelection)
+    app.use('/api/v1/mail/*', blockGlobalWorkspaceMail)
   if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
   if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
   if (onboarding) app.route('/', createOnboardingRoutes(onboarding))
+  if (workspaceSelection) app.route('/', createWorkspaceSelectionRoutes(workspaceSelection))
 
   if (config.apiDocsEnabled) {
     app.doc('/openapi.json', {
