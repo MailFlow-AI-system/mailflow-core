@@ -1,12 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { authorizeWorkspaceDiscovery } from './authorization.js'
 import { listWorkspacesRoute, workspaceContextRoute } from './contract.js'
-import type {
-  DiscoveryBudget,
-  WorkspaceMiddleware,
-  WorkspaceReader,
-  WorkspaceRouteEnvironment,
-} from './types.js'
+import type { DiscoveryBudget, WorkspaceReader, WorkspaceRouteEnvironment } from './types.js'
 
 export function createWorkspaceRoutes(reader: WorkspaceReader, consumeBudget: DiscoveryBudget) {
   const app = new OpenAPIHono<WorkspaceRouteEnvironment>({
@@ -20,28 +16,7 @@ export function createWorkspaceRoutes(reader: WorkspaceReader, consumeBudget: Di
         })
     },
   })
-  const authorize: WorkspaceMiddleware = async (context, next) => {
-    context.header('Cache-Control', 'private, no-store')
-    const session = context.get('authSession')
-    if (!session)
-      return problemDetailsResponse(context, {
-        title: 'Unauthorized',
-        status: 401,
-        detail: 'Authentication is required.',
-        code: 'authentication_required',
-      })
-    const retryAfter = await consumeBudget(session.user.id)
-    if (retryAfter) {
-      context.header('Retry-After', String(retryAfter))
-      return problemDetailsResponse(context, {
-        title: 'Too many requests',
-        status: 429,
-        detail: 'Please wait before retrying.',
-        code: 'workspace_rate_limited',
-      })
-    }
-    await next()
-  }
+  const authorize = authorizeWorkspaceDiscovery(consumeBudget)
   app.use('/api/v1/workspaces', authorize)
   app.use('/api/v1/workspaces/*', authorize)
   app.openapi(listWorkspacesRoute, async (context) => {
