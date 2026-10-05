@@ -62,12 +62,14 @@ export async function createWorkspaceTestFixture() {
   await admin.query('update identity_workspace."user" set email_verified = true where id = $1', [
     user.user.id,
   ])
-  const otherId = randomUUID()
-  await admin.query(
-    `insert into identity_workspace."user" (id, name, email, email_verified, created_at, updated_at)
-    values ($1, 'Other User', $2, true, now(), now())`,
-    [otherId, `other-${otherId}@mailflow.invalid`],
-  )
+  const otherEmail = `other-${randomUUID()}@mailflow.invalid`
+  const otherUser = await auth.api.signUpEmail({
+    body: { name: 'Other User', email: otherEmail, password },
+  })
+  const otherId = otherUser.user.id
+  await admin.query('update identity_workspace."user" set email_verified=true where id=$1', [
+    otherId,
+  ])
   const acme = randomUUID(),
     northwind = randomUUID(),
     globex = randomUUID()
@@ -107,6 +109,8 @@ export async function createWorkspaceTestFixture() {
     email,
     password,
     userId: user.user.id,
+    otherId,
+    otherEmail,
     acme,
     northwind,
     globex,
@@ -122,11 +126,12 @@ export async function createWorkspaceTestFixture() {
         await admin.query('delete from identity_workspace."user" where id = any($1::text[])', [
           [user.user.id, otherId],
         ])
-        await admin.query('delete from identity_workspace.verification where identifier = $1', [
-          `email-verification-otp-${email}`,
-        ])
-        await admin.query('delete from identity_workspace.rate_limit where key = $1', [
-          `workspace-discovery:${user.user.id}`,
+        await admin.query(
+          'delete from identity_workspace.verification where identifier = any($1::text[])',
+          [[`email-verification-otp-${email}`, `email-verification-otp-${otherEmail}`]],
+        )
+        await admin.query('delete from identity_workspace.rate_limit where key = any($1::text[])', [
+          [`workspace-discovery:${user.user.id}`, `workspace-discovery:${otherId}`],
         ])
       } finally {
         await pool.end()
