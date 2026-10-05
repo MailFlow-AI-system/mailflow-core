@@ -1,5 +1,9 @@
 import type { Logger } from 'pino'
-import type { AuthService, WorkspaceRouteDependencies } from '#modules/identityWorkspace'
+import type {
+  AuthService,
+  OnboardingRouteDependencies,
+  WorkspaceRouteDependencies,
+} from '#modules/identityWorkspace'
 import type { MailMessageRepository } from '#modules/mail'
 import type { AppConfig } from '#shared/config/env'
 import type { Observability } from '#shared/observability/observability'
@@ -13,4 +17,5 @@ export type AppDependencies = {
   mailRepository?: MailMessageRepository
   observability?: Observability
   workspaces?: WorkspaceRouteDependencies
+  onboarding?: OnboardingRouteDependencies
 }
