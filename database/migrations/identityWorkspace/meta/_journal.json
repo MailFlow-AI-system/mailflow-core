@@ -29,6 +29,34 @@
       "when": 1791194429769,
       "tag": "0003_workspace_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791203108985,
+      "tag": "0004_onboarding_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791203134460,
+      "tag": "0005_onboarding_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791203739308,
+      "tag": "0006_onboarding_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791205021890,
+      "tag": "0007_onboarding_fresh_identity",
+      "breakpoints": true
     }
   ]
 }
