@@ -9,6 +9,16 @@ export type { OnboardingRouteDependencies } from './onboarding/types.js'
 export { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 export { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
 export { createWorkspaceRoutes } from './workspaces/route.js'
-export { workspaceReadsEnabled } from './workspaces/runtimeConfig.js'
-export type { WorkspaceReader, WorkspaceRouteDependencies } from './workspaces/types.js'
+export {
+  workspaceLocalSwitchingEnabled,
+  workspaceReadsEnabled,
+} from './workspaces/runtimeConfig.js'
+export { assertWorkspaceSelectionDatabaseRole } from './workspaces/selectionDatabaseRole.js'
+export { createWorkspaceSelectionRoutes } from './workspaces/selectionRoute.js'
+export type {
+  WorkspaceReader,
+  WorkspaceRouteDependencies,
+  WorkspaceSelectionDependencies,
+} from './workspaces/types.js'
 export { createWorkspaceReader } from './workspaces/workspaceReader.js'
+export { createWorkspaceSelection } from './workspaces/workspaceSelection.js'

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
 import type { AuthService } from './modules/identityWorkspace/infrastructure/types/auth.js'
 import type { AppConfig } from './shared/config/env.js'
+import type { AppDependencies } from './types/app.js'
 
 const config: AppConfig = {
   appEnv: 'development',
@@ -17,7 +18,10 @@ const config: AppConfig = {
   serviceInstanceId: 'test-instance',
 }
 
-function createTestApp(overrides: Partial<AppConfig> = {}) {
+function createTestApp(
+  overrides: Partial<AppConfig> = {},
+  dependencies: Partial<AppDependencies> = {},
+) {
   const auth: AuthService = {
     handler: vi.fn(async () => Response.json({ delegated: true })),
     api: {
@@ -32,10 +36,74 @@ function createTestApp(overrides: Partial<AppConfig> = {}) {
     auth,
     allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
     mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
+    ...dependencies,
   })
 }
 
 describe('application', () => {
+  it('blocks the global mail repository in workspace mode, including direct API requests', async () => {
+    const findMessages = vi.fn().mockResolvedValue([])
+    const app = createTestApp(
+      {},
+      {
+        auth: {
+          handler: async () => new Response(null),
+          api: { getSession: async () => ({ session: { id: 'session' }, user: { id: 'user' } }) },
+        },
+        mailRepository: { findMessages },
+        workspaces: {
+          reader: {
+            list: async () => ({ items: [], nextCursor: null }),
+            context: async () => null,
+          },
+          consumeBudget: async () => 0,
+        },
+      },
+    )
+
+    const response = await app.request('/api/v1/mail/messages?q=secret')
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'workspace_mail_unavailable' })
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(findMessages).not.toHaveBeenCalled()
+  })
+
+  it('preserves the authenticated global Inbox when workspace mode is disabled', async () => {
+    const findMessages = vi.fn().mockResolvedValue([])
+    const app = createTestApp(
+      {},
+      {
+        auth: {
+          handler: async () => new Response(null),
+          api: { getSession: async () => ({ session: { id: 'session' }, user: { id: 'user' } }) },
+        },
+        mailRepository: { findMessages },
+      },
+    )
+
+    const response = await app.request('/api/v1/mail/messages')
+
+    expect(response.status).toBe(200)
+    expect(findMessages).toHaveBeenCalledOnce()
+  })
+
+  it('still authenticates before blocking mail in workspace mode', async () => {
+    const app = createTestApp(
+      {},
+      {
+        workspaces: {
+          reader: {
+            list: async () => ({ items: [], nextCursor: null }),
+            context: async () => null,
+          },
+          consumeBudget: async () => 0,
+        },
+      },
+    )
+    expect((await app.request('/api/v1/mail/messages')).status).toBe(401)
+  })
+
   it('returns RFC 9457 problem details for an unknown route', async () => {
     const app = createTestApp()
 
