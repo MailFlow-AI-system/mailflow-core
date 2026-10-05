@@ -8,6 +8,7 @@ import {
   assertWorkspaceSelectionDatabaseRole,
   createAuth,
   createDiscoveryBudget,
+  createWorkspaceEntryReader,
   createWorkspaceReader,
   createWorkspaceSelection,
 } from '../../src/modules/identityWorkspace/index.js'
@@ -38,6 +39,15 @@ const auth = createAuth(drizzle(fixture.pool), authConfig, async () => {}, undef
 })
 let clientIp = testClientIp()
 const selection = createWorkspaceSelection(fixture.pool)
+const entryReader = createWorkspaceEntryReader(fixture.pool)
+let failNextEntry = false
+const emptyEmail = `empty-${randomUUID()}@mailflow.invalid`
+const emptyUser = await auth.api.signUpEmail({
+  body: { name: 'No Workspace', email: emptyEmail, password: fixture.password },
+})
+await fixture.admin.query('update identity_workspace."user" set email_verified=true where id=$1', [
+  emptyUser.user.id,
+])
 let selections = 0
 let failNext = false
 let revokeAfterSelection = false
@@ -64,6 +74,18 @@ const app = createApp({
   allowedAuthOrigins: authConfig.allowedOrigins,
   workspaces: {
     reader: createWorkspaceReader(fixture.pool),
+    consumeBudget: createDiscoveryBudget(fixture.pool),
+  },
+  workspaceEntry: {
+    reader: {
+      resolve: async (actor) => {
+        if (failNextEntry) {
+          failNextEntry = false
+          throw new Error('Synthetic entry failure')
+        }
+        return entryReader.resolve(actor)
+      },
+    },
     consumeBudget: createDiscoveryBudget(fixture.pool),
   },
   workspaceSelection: {
@@ -109,8 +131,12 @@ app.get('/__fixture', async (context) => {
     host,
     targetHost,
     email: fixture.email,
+    otherEmail: fixture.otherEmail,
+    emptyEmail,
     password: fixture.password,
     targetId: fixture.northwind,
+    currentId: fixture.acme,
+    fallbackHost: `${[fixture.acme, fixture.northwind].sort()[0] === fixture.acme ? fixture.acmeSlug : fixture.northwindSlug}.workspace.test`,
     unrelatedId: fixture.globex,
     controlKey,
     selections,
@@ -126,8 +152,16 @@ app.post('/__fixture/control', async (context) => {
   if (action === 'reset') {
     clientIp = testClientIp()
     await fixture.admin.query(
-      'delete from identity_workspace.workspace_preference where user_id=$1',
-      [fixture.userId],
+      'delete from identity_workspace.workspace_preference where user_id=any($1::text[])',
+      [[fixture.userId, fixture.otherId, emptyUser.user.id]],
+    )
+    await fixture.admin.query(
+      'delete from identity_workspace.rate_limit where key=any($1::text[])',
+      [
+        [fixture.userId, fixture.otherId, emptyUser.user.id].map(
+          (id) => `workspace-discovery:${id}`,
+        ),
+      ],
     )
     await fixture.admin.query(
       "insert into identity_workspace.member(id,organization_id,user_id,role,created_at) values($1,$2,$3,'member',now()) on conflict(organization_id,user_id) do nothing",
@@ -136,7 +170,13 @@ app.post('/__fixture/control', async (context) => {
     selections = 0
     failNext = false
     revokeAfterSelection = false
+    failNextEntry = false
   } else if (action === 'fail-next') failNext = true
+  else if (action === 'fail-next-entry') failNextEntry = true
+  else if (action === 'expire-session')
+    await fixture.admin.query('delete from identity_workspace.session where user_id=$1', [
+      fixture.userId,
+    ])
   else if (action === 'revoke-after-selection') revokeAfterSelection = true
   else if (action === 'revoke-northwind')
     await fixture.admin.query(
@@ -151,6 +191,19 @@ console.info('Workspace switching fixture ready on 127.0.0.1:8083')
 for (const signal of ['SIGTERM', 'SIGINT'] as const)
   process.once(signal, () => {
     server.close(() => {
-      void fixture.close().then(() => process.exit(0))
+      void (async () => {
+        await fixture.admin.query('delete from identity_workspace."user" where id=$1', [
+          emptyUser.user.id,
+        ])
+        await fixture.admin.query(
+          'delete from identity_workspace.verification where identifier=$1',
+          [`email-verification-otp-${emptyEmail}`],
+        )
+        await fixture.admin.query('delete from identity_workspace.rate_limit where key=$1', [
+          `workspace-discovery:${emptyUser.user.id}`,
+        ])
+        await fixture.close()
+        process.exit(0)
+      })()
     })
   })

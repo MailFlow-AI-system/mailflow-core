@@ -82,3 +82,25 @@ export const workspaceContextRoute = createRoute({
     ...errors,
   },
 })
+
+export const workspaceEntryRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/workspace-entry',
+  tags: ['Workspace'],
+  request: { query: z.object({}).strict() },
+  responses: {
+    200: {
+      description: 'Live preference, stable-ID fallback, or no membership; never a redirect',
+      content: {
+        'application/json': {
+          schema: z.discriminatedUnion('source', [
+            z.object({ source: z.literal('preference'), workspace: workspaceSummarySchema }),
+            z.object({ source: z.literal('fallback'), workspace: workspaceSummarySchema }),
+            z.object({ source: z.literal('none'), workspace: z.null() }),
+          ]),
+        },
+      },
+    },
+    ...errors,
+  },
+})

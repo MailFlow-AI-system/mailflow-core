@@ -8,6 +8,8 @@ export { createOnboardingService } from './onboarding/service.js'
 export type { OnboardingRouteDependencies } from './onboarding/types.js'
 export { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 export { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
+export { createWorkspaceEntryRoutes } from './workspaces/entryRoute.js'
+export type { WorkspaceEntryDependencies } from './workspaces/entryTypes.js'
 export { createWorkspaceRoutes } from './workspaces/route.js'
 export {
   workspaceLocalSwitchingEnabled,
@@ -20,5 +22,6 @@ export type {
   WorkspaceRouteDependencies,
   WorkspaceSelectionDependencies,
 } from './workspaces/types.js'
+export { createWorkspaceEntryReader } from './workspaces/workspaceEntryReader.js'
 export { createWorkspaceReader } from './workspaces/workspaceReader.js'
 export { createWorkspaceSelection } from './workspaces/workspaceSelection.js'

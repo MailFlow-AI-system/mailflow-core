@@ -2,6 +2,7 @@ import type { Logger } from 'pino'
 import type {
   AuthService,
   OnboardingRouteDependencies,
+  WorkspaceEntryDependencies,
   WorkspaceRouteDependencies,
   WorkspaceSelectionDependencies,
 } from '#modules/identityWorkspace'
@@ -20,4 +21,5 @@ export type AppDependencies = {
   workspaces?: WorkspaceRouteDependencies
   onboarding?: OnboardingRouteDependencies
   workspaceSelection?: WorkspaceSelectionDependencies
+  workspaceEntry?: WorkspaceEntryDependencies
 }
