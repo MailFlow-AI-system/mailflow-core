@@ -1,17 +1,23 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { betterAuth } from 'better-auth'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
-import { emailOTP } from 'better-auth/plugins'
-import type { createDatabase } from '#shared/database/client'
+import { emailOTP, organization } from 'better-auth/plugins'
 import { type AccountEmailSender, createAccountEmailSender } from '../../accountEmails/index.js'
 import { authAccount } from '../database/schema/auth/account.js'
 import { authRateLimit } from '../database/schema/auth/rateLimit.js'
 import { authSession } from '../database/schema/auth/session.js'
 import { authUser } from '../database/schema/auth/user.js'
 import { authVerification } from '../database/schema/auth/verification.js'
+import { workspace, workspaceInvitation, workspaceMember } from '../database/schema/workspace.js'
+import type {
+  AuthDatabase,
+  AuthEmailFailureReporter,
+  PasswordResetDeliveryInput,
+  PasswordResetRateLimit,
+  VerificationStatusUser,
+  VerifiedAccountUser,
+} from '../types/authOptions.js'
 import type { AuthConfig } from './authConfig.js'
-
-type Database = ReturnType<typeof createDatabase>['database']
 
 const authSchema = {
   user: authUser,
@@ -19,6 +25,9 @@ const authSchema = {
   account: authAccount,
   verification: authVerification,
   rateLimit: authRateLimit,
+  organization: workspace,
+  member: workspaceMember,
+  invitation: workspaceInvitation,
 }
 
 const passwordAlreadyInUseError = {
@@ -27,7 +36,7 @@ const passwordAlreadyInUseError = {
 }
 
 export function createAuth(
-  database: Database,
+  database: AuthDatabase,
   config: AuthConfig,
   sendAccountEmail: AccountEmailSender = createAccountEmailSender(config),
   reportEmailDeliveryFailure: AuthEmailFailureReporter = () => {},
@@ -41,8 +50,6 @@ export function createAuth(
     ...createAuthOptions(config, sendAccountEmail, reportEmailDeliveryFailure),
   })
 }
-
-type AuthEmailFailureReporter = (operation: 'account-welcome' | 'password-reset') => void
 
 export function createAuthOptions(
   config: AuthConfig,
@@ -78,15 +85,7 @@ export function createAuthOptions(
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: 60 * 60,
       sendResetPassword: async (
-        {
-          user,
-          url,
-          token,
-        }: {
-          user: { email: string; name: string }
-          url: string
-          token: string
-        },
+        { user, url, token }: PasswordResetDeliveryInput,
         request?: Request,
       ) => {
         try {
@@ -104,7 +103,7 @@ export function createAuthOptions(
     },
     emailVerification: {
       autoSignInAfterVerification: false,
-      beforeEmailVerification: async (user: { emailVerified: boolean }) => {
+      beforeEmailVerification: async (user: VerificationStatusUser) => {
         if (user.emailVerified) {
           throw APIError.from('BAD_REQUEST', {
             code: 'EMAIL_ALREADY_VERIFIED',
@@ -112,7 +111,7 @@ export function createAuthOptions(
           })
         }
       },
-      afterEmailVerification: async (user: { id: string; email: string; name: string }) => {
+      afterEmailVerification: async (user: VerifiedAccountUser) => {
         const welcomeMessage = {
           kind: 'verified-welcome' as const,
           to: user.email,
@@ -134,6 +133,7 @@ export function createAuthOptions(
       },
     },
     plugins: [
+      organization({ allowUserToCreateOrganization: false, disableOrganizationDeletion: true }),
       emailOTP({
         allowedAttempts: 3,
         disableSignUp: true,
@@ -172,9 +172,7 @@ export function createAuthOptions(
                   where: [{ field: 'key', value: key }],
                 })
               )[0]
-            const rateLimit = (await readRateLimit()) as
-              | { lastRequest: number | bigint }
-              | undefined
+            const rateLimit = (await readRateLimit()) as PasswordResetRateLimit | undefined
             const now = Date.now()
 
             if (!rateLimit) {

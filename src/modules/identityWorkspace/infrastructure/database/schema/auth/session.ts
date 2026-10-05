@@ -13,6 +13,7 @@ export const authSession = identityWorkspaceSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    activeOrganizationId: text('active_organization_id'),
     userId: text('user_id')
       .notNull()
       .references(() => authUser.id, { onDelete: 'cascade' }),
