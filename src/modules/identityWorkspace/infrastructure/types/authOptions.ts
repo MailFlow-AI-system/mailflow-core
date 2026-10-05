@@ -3,6 +3,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 
 export type AuthDatabase = NodePgDatabase
 export type AuthProvisioningOptions = {
+  localWorkspaceCookie?: boolean
   generateId?: NonNullable<NonNullable<BetterAuthOptions['advanced']>['database']>['generateId']
   otpStorage?: {
     encrypt: (value: string) => Promise<string>

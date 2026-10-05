@@ -19,6 +19,7 @@ import type {
   VerifiedAccountUser,
 } from '../types/authOptions.js'
 import type { AuthConfig } from './authConfig.js'
+import { localWorkspaceCookie } from './localWorkspaceCookie.js'
 
 const authSchema = {
   user: authUser,
@@ -79,6 +80,9 @@ export function createAuthOptions(
       },
     },
     advanced: {
+      ...(provisioning.localWorkspaceCookie
+        ? { crossSubDomainCookies: localWorkspaceCookie(config, true) }
+        : {}),
       ipAddress: { ipAddressHeaders: ['x-real-ip'] },
       ...(provisioning.generateId ? { database: { generateId: provisioning.generateId } } : {}),
     },

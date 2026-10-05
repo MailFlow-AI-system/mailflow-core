@@ -33,7 +33,8 @@ export async function createWorkspaceTestFixture() {
     END IF;
   END $$;
   GRANT USAGE ON SCHEMA identity_workspace TO workspace_test_app;
-  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace TO workspace_test_app;`)
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace TO workspace_test_app;
+  GRANT EXECUTE ON FUNCTION identity_workspace.select_workspace_preference(text) TO workspace_test_app;`)
   } finally {
     try {
       await migrationLock.query('select pg_advisory_unlock(77193022)')
@@ -110,6 +111,7 @@ export async function createWorkspaceTestFixture() {
     northwind,
     globex,
     acmeSlug: `acme-${slugSuffix}`,
+    northwindSlug: `northwind-${slugSuffix}`,
     globexSlug: `globex-${slugSuffix}`,
     close: async () => {
       try {

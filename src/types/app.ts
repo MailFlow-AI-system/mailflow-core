@@ -3,6 +3,7 @@ import type {
   AuthService,
   OnboardingRouteDependencies,
   WorkspaceRouteDependencies,
+  WorkspaceSelectionDependencies,
 } from '#modules/identityWorkspace'
 import type { MailMessageRepository } from '#modules/mail'
 import type { AppConfig } from '#shared/config/env'
@@ -18,4 +19,5 @@ export type AppDependencies = {
   observability?: Observability
   workspaces?: WorkspaceRouteDependencies
   onboarding?: OnboardingRouteDependencies
+  workspaceSelection?: WorkspaceSelectionDependencies
 }
