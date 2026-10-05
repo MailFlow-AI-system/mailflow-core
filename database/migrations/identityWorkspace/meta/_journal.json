@@ -15,6 +15,20 @@
       "when": 1790647782593,
       "tag": "0001_add_better_auth_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791194386535,
+      "tag": "0002_workspace_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791194429769,
+      "tag": "0003_workspace_isolation",
+      "breakpoints": true
     }
   ]
 }

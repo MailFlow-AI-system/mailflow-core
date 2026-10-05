@@ -1,5 +1,11 @@
 import { serve } from '@hono/node-server'
-import { createAuth } from '#modules/identityWorkspace'
+import {
+  assertWorkspaceDatabaseRole,
+  createAuth,
+  createDiscoveryBudget,
+  createWorkspaceReader,
+  workspaceReadsEnabled,
+} from '#modules/identityWorkspace'
 import { createMailMessageRepository } from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
@@ -14,6 +20,8 @@ const authConfig = loadAuthConfig(process.env)
 const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
+const enableWorkspaceReads = workspaceReadsEnabled(process.env)
+if (enableWorkspaceReads) await assertWorkspaceDatabaseRole(database.pool)
 const auth = createAuth(database.database, authConfig, undefined, (operation) =>
   logger.error({ operation }, 'Account email delivery failed'),
 )
@@ -25,6 +33,14 @@ const app = createApp({
   auth,
   allowedAuthOrigins: authConfig.allowedOrigins,
   mailRepository: createMailMessageRepository(database.database),
+  ...(enableWorkspaceReads
+    ? {
+        workspaces: {
+          reader: createWorkspaceReader(database.pool),
+          consumeBudget: createDiscoveryBudget(database.pool),
+        },
+      }
+    : {}),
 })
 
 const server = serve({
