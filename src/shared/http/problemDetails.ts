@@ -1,17 +1,12 @@
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import type { ProblemDetailsInput } from './types/problemDetails.js'
 
-export type ProblemDetailsInput<Status extends ContentfulStatusCode = ContentfulStatusCode> = {
-  type?: string
-  title: string
-  status: Status
-  detail: string
-  code: string
-}
+export type { ProblemDetailsInput } from './types/problemDetails.js'
 
-export function problemDetailsResponse<Status extends ContentfulStatusCode>(
+export function problemDetailsResponse<S extends ContentfulStatusCode>(
   context: Context,
-  problem: ProblemDetailsInput<Status>,
+  problem: ProblemDetailsInput<S>,
 ) {
   return context.json(
     {

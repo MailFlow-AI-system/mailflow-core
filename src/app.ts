@@ -3,25 +3,14 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
-import type { Logger } from 'pino'
 
-import { type AuthService, installAuthRoutes } from '#modules/identityWorkspace'
-import { createMailModule, type MailMessageRepository } from '#modules/mail'
+import { createWorkspaceRoutes, installAuthRoutes } from '#modules/identityWorkspace'
+import { createMailModule } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
-import type { AppConfig } from '#shared/config/env'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
-import { createNoopObservability, type Observability } from '#shared/observability/observability'
-
-type AppDependencies = {
-  config: AppConfig
-  logger: Logger
-  checkDatabase: () => Promise<void>
-  auth: AuthService
-  allowedAuthOrigins: string[]
-  mailRepository: MailMessageRepository
-  observability?: Observability
-}
+import { createNoopObservability } from '#shared/observability/observability'
+import type { AppDependencies } from './types/app.js'
 
 export function createApp({
   config,
@@ -30,6 +19,7 @@ export function createApp({
   auth,
   allowedAuthOrigins,
   mailRepository,
+  workspaces,
   observability = createNoopObservability('mailflow-core-api'),
 }: AppDependencies) {
   const app = new OpenAPIHono()
@@ -38,7 +28,8 @@ export function createApp({
 
   installAuthRoutes(app, { auth, allowedOrigins: allowedAuthOrigins })
   app.route('/', createHealthModule({ checkDatabase }))
-  app.route('/', createMailModule({ repository: mailRepository }))
+  if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
+  if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
 
   if (config.apiDocsEnabled) {
     app.doc('/openapi.json', {
