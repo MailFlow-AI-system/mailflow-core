@@ -12,7 +12,8 @@ export async function inIdentityTransaction<T>(
     await client.query('BEGIN')
     await client.query("select set_config('mailflow.user_id', $1, true)", [userId])
     const result = await operation(client)
-    await client.query('COMMIT')
+    const commit = await client.query('COMMIT')
+    if (commit.command !== 'COMMIT') throw new Error('Identity transaction did not commit')
     return result
   } catch (error) {
     try {

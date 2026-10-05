@@ -16,6 +16,14 @@ export type WorkspaceReader = {
   list: (userId: string, cursor?: string) => Promise<WorkspacePage>
   context: (userId: string, slug: string) => Promise<WorkspaceSummary | null>
 }
+export type WorkspaceSelection = {
+  select: (userId: string, workspaceId: string) => Promise<WorkspaceSummary | null>
+}
+export type WorkspaceSelectionDependencies = {
+  selection: WorkspaceSelection
+  allowedOrigins: string[]
+  consumeBudget: DiscoveryBudget
+}
 export type WorkspaceRouteEnvironment = { Variables: { authSession: AuthSession } }
 export type WorkspaceMiddleware = MiddlewareHandler<WorkspaceRouteEnvironment>
 export type DiscoveryBudget = (userId: string) => Promise<number>
