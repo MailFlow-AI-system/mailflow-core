@@ -7,6 +7,7 @@ import {
   createOnboardingBudget,
   createOnboardingOtpHandler,
   createOnboardingService,
+  createWorkspaceEntryReader,
   createWorkspaceReader,
   createWorkspaceSelection,
   workspaceLocalSwitchingEnabled,
@@ -67,6 +68,10 @@ const app = createApp({
         workspaceSelection: {
           selection: createWorkspaceSelection(database.pool),
           allowedOrigins: authConfig.allowedOrigins,
+          consumeBudget: createDiscoveryBudget(database.pool),
+        },
+        workspaceEntry: {
+          reader: createWorkspaceEntryReader(database.pool),
           consumeBudget: createDiscoveryBudget(database.pool),
         },
       }
