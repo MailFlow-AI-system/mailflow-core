@@ -19,8 +19,46 @@ removed in finally. No shared or production data is used.
 
 This verifies atomic accounting and identity separation, not throughput, latency
 SLOs, tenant scheduling fairness, or future Mail/job isolation. A single identity
-shares its budget across its workspaces intentionally. Load measurements through
-the complete HTTP stack remain pending.
+shares its budget across its workspaces intentionally. The separate HTTP exercise
+below adds local end-to-end latency evidence, not production capacity guarantees.
+
+### Real HTTP exercise (2026-10-06)
+
+`test/workspaceSwitching/httpLoadSmoke.ts` signs in two synthetic identities
+through the real Better Auth HTTP handler and sends a finite concurrent burst to
+the real list endpoint / restricted PostgreSQL pool. It checks response identity,
+exclusion of unrelated memberships, Retry-After and absence of preference/session
+organization/global Mail side effects. It outputs aggregates only, never cookies
+or credentials. The harness binds only to loopback and requires the dedicated DB.
+
+Predefined workload/goals: 150 requests for A, 20 for B; 120 A successes / 30
+rate-limit rejections; 20 B successes / no rejections; no unexpected status; B
+p95 below 2 seconds; complete burst below 5 seconds. This is a local test ceiling,
+not a production SLO. Nearest-rank percentiles include complete response reads.
+
+Initial run failed: A had 13 successes / 137 rejections while B had 20 successes.
+The route installed overlapping exact and wildcard authorization middleware;
+each list request debited twice. Under concurrency, first-pass requests exhausted
+the budget before many could finish their second pass. A permanent regression
+proved two debits per request. Removing the redundant exact registration made it
+pass, without weakening authentication or changing the 120/minute budget.
+
+Same workload after the fix: complete burst 548 ms; A 120 success / 30 rejected,
+p50 441 ms, p95 504 ms, max 509 ms; B 20 success / 0 rejected, p50 513 ms,
+p95 519 ms, max 520 ms. Unexpected HTTP outcomes: zero. All predefined goals
+passed. No membership leakage or selection/global Mail side effects detected.
+
+Reproduction with an independently owned test fixture running:
+
+```sh
+bun run tsx --conditions=development test/workspaceSwitching/httpLoadSmoke.ts
+```
+
+The script resets only that fixture's owned budget/preferences before execution;
+do not share the fixture process with another active test suite. This does not
+prove sustained throughput, production scale, or fairness of future Mail/jobs.
+Full Core check after the accounting fix: 169 tests plus lint, formatting,
+typecheck and build passed with the isolated PostgreSQL database.
 
 ## Validation and remaining work
 
@@ -28,8 +66,8 @@ Initial discovery regression failed with 500; the controlled response made it
 pass. Full Core check passed with the isolated PostgreSQL database (166 tests,
 including the selection regression). No schema changes.
 
-Phase 6 is **not complete**: environment telemetry/ingestion, measured
-HTTP abuse exercise, browser recovery evidence, the previously reproduced
+Phase 6 is **not complete**: environment telemetry/ingestion,
+browser recovery evidence, the previously reproduced
 parallel SSR failure, final development integration and environment smoke remain.
 No external deployment, DNS, cookies or observability configuration was changed.
 

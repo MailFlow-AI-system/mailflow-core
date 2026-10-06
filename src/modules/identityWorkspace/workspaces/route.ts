@@ -17,7 +17,6 @@ export function createWorkspaceRoutes(reader: WorkspaceReader, consumeBudget: Di
     },
   })
   const authorize = authorizeWorkspaceDiscovery(consumeBudget)
-  app.use('/api/v1/workspaces', authorize)
   app.use('/api/v1/workspaces/*', authorize)
   app.openapi(listWorkspacesRoute, async (context) => {
     const { cursor } = context.req.valid('query')
