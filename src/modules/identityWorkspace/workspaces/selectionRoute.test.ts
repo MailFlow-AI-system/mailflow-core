@@ -42,6 +42,16 @@ function request(body: unknown = { workspaceId: 'target' }, requestOrigin = orig
   })
 }
 describe('workspace selection HTTP contract', () => {
+  it('does not write a preference when an old tab expects a different identity', async () => {
+    const { app, select, consumeBudget } = fixture()
+    const input = request()
+    input.headers.set('X-Workspace-Identity', 'previous-actor')
+    const response = await app.request(input)
+    expect(response.status).toBe(403)
+    expect(response.headers.get('x-workspace-identity')).toBe('actor')
+    expect(select).not.toHaveBeenCalled()
+    expect(consumeBudget).not.toHaveBeenCalled()
+  })
   it('selects only for the session identity and returns no redirect or session mutation', async () => {
     const { app, select } = fixture()
     const response = await app.request(request())

@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { bodyLimit } from 'hono/body-limit'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { authorizeWorkspaceDiscovery } from './authorization.js'
 import { workspaceSelectionRoute } from './selectionContract.js'
 import type { WorkspaceRouteEnvironment, WorkspaceSelectionDependencies } from './types.js'
 
@@ -29,18 +30,9 @@ export function createWorkspaceSelectionRoutes({
         detail: 'Untrusted selection origin.',
         code: 'workspace_origin_denied',
       })
-    const retryAfter = await consumeBudget(context.get('authSession').user.id)
-    if (retryAfter) {
-      context.header('Retry-After', String(retryAfter))
-      return problemDetailsResponse(context, {
-        title: 'Too many requests',
-        status: 429,
-        detail: 'Please wait before retrying.',
-        code: 'workspace_rate_limited',
-      })
-    }
     await next()
   })
+  app.use('/api/v1/workspace-selection', authorizeWorkspaceDiscovery(consumeBudget))
   app.use(
     '/api/v1/workspace-selection',
     bodyLimit({
