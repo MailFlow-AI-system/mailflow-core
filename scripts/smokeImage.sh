@@ -8,6 +8,7 @@ readonly network_name="mailflow-core-smoke-network-${smoke_suffix}"
 readonly database_name="mailflow-core-smoke-database-${smoke_suffix}"
 readonly api_name="mailflow-core-smoke-api-${smoke_suffix}"
 readonly worker_name="mailflow-core-smoke-worker-${smoke_suffix}"
+readonly migration_name="mailflow-core-smoke-migrations-${smoke_suffix}"
 readonly database_url="postgresql://mailflow:mailflow@${database_name}:5432/mailflow"
 readonly api_container_port=18081
 
@@ -73,6 +74,7 @@ cleanup() {
 
   remove_container "${api_name}"
   remove_container "${worker_name}"
+  remove_container "${migration_name}"
   if "${docker_bin}" inspect "${database_name}" >/dev/null 2>&1; then
     "${docker_bin}" stop --time 10 "${database_name}" >/dev/null 2>&1 || true
     "${docker_bin}" rm --volumes "${database_name}" >/dev/null 2>&1 || "${docker_bin}" rm --force --volumes "${database_name}" >/dev/null 2>&1 || true
@@ -108,6 +110,33 @@ until "${docker_bin}" exec "${database_name}" pg_isready -U mailflow -d mailflow
   fi
   sleep 1
 done
+
+printf 'Checking migrations require DIRECT_URL\n'
+if "${docker_bin}" run --rm \
+  --name "${migration_name}" \
+  --network "${network_name}" \
+  --env DATABASE_URL="${database_url}" \
+  "${image_tag}" node dist/entrypoints/migrate.js; then
+  printf 'Migration command accepted DATABASE_URL without DIRECT_URL.\n' >&2
+  exit 1
+fi
+
+printf 'Applying and repeating migrations from the production image\n'
+for attempt in 1 2; do
+  printf 'Migration attempt %s\n' "${attempt}"
+  "${docker_bin}" run --rm \
+    --name "${migration_name}" \
+    --network "${network_name}" \
+    --env DIRECT_URL="${database_url}" \
+    --env DATABASE_URL=postgresql://invalid:invalid@127.0.0.1:1/invalid \
+    "${image_tag}" node dist/entrypoints/migrate.js
+done
+ledger_counts="$("${docker_bin}" exec "${database_name}" psql -U mailflow -d mailflow -Atc \
+  'SELECT (SELECT count(*) FROM identity_workspace_migrations.__drizzle_migrations), (SELECT count(*) FROM mail_migrations.__drizzle_migrations)')"
+if [[ "${ledger_counts//$'\r'/}" != '2|1' ]]; then
+  printf 'Migration ledgers did not match the three shipped migrations.\n' >&2
+  exit 1
+fi
 
 printf 'Starting API and worker\n'
 api_publish="127.0.0.1::${api_container_port}"
@@ -214,4 +243,4 @@ if [[ "${worker_exit_code}" != '0' ]] || ! "${docker_bin}" logs "${worker_name}"
   exit 1
 fi
 
-printf 'Image smoke tests passed: live, ready, not-ready, worker liveness, and graceful shutdown.\n'
+printf 'Image smoke tests passed: migrations, live, ready, not-ready, worker liveness, and graceful shutdown.\n'
