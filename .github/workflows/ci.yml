@@ -28,6 +28,7 @@ jobs:
       contents: read
     env:
       CI: true
+      TEST_DATABASE_URL: postgresql://mailflow:mailflow@localhost:5432/mailflow
     services:
       database:
         image: postgres:18.6-alpine
@@ -73,14 +74,14 @@ jobs:
 
       - name: Test migration installation, recovery, and concurrency
         env:
-          MAILFLOW_MIGRATIONS_TEST_DATABASE_URL: postgresql://mailflow:mailflow@localhost:5432/mailflow
+          MAILFLOW_MIGRATIONS_TEST_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: bun run test src/shared/database/migrations.integration.test.ts
 
       - name: Test Auth and Inbox on the migrated disposable database
         env:
-          DIRECT_URL: postgresql://mailflow:mailflow@localhost:5432/mailflow
-          MAILFLOW_AUTH_INTEGRATION_DATABASE_URL: postgresql://mailflow:mailflow@localhost:5432/mailflow
-          MAILFLOW_MAIL_INTEGRATION_DATABASE_URL: postgresql://mailflow:mailflow@localhost:5432/mailflow
+          DIRECT_URL: ${{ env.TEST_DATABASE_URL }}
+          MAILFLOW_AUTH_INTEGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          MAILFLOW_MAIL_INTEGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: |
           bunx tsx src/entrypoints/migrate.ts
           bun run test src/modules/identityWorkspace/infrastructure/auth/auth.integration.test.ts src/modules/mail/inbox/listMessages/listMessages.integration.test.ts

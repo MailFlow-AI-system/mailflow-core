@@ -5,15 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Client } from 'pg'
 
 import { loadMigrationConfig } from './migrationConfig.js'
-
-const modules = [
-  {
-    name: 'identity-workspace',
-    folder: 'identityWorkspace',
-    schema: 'identity_workspace_migrations',
-  },
-  { name: 'mail', folder: 'mail', schema: 'mail_migrations' },
-] as const
+import { migrationModules, migrationTable } from './migrationModules.js'
 
 type MigrationLog = (message: string, context: { module: string }) => void
 
@@ -23,9 +15,13 @@ export async function runMigrations(
   log: MigrationLog = () => undefined,
 ) {
   const { directUrl } = loadMigrationConfig(environment)
-  const selected = args.length === 0 ? modules : modules.filter((module) => module.name === args[0])
+  const selected =
+    args.length === 0
+      ? migrationModules
+      : migrationModules.filter((module) => module.name === args[0])
   if (args.length > 1 || selected.length === 0) {
-    throw new Error('Invalid migration target; use identity-workspace, mail, or no target for all')
+    const validTargets = migrationModules.map((module) => module.name).join(', ')
+    throw new Error(`Invalid migration target; use ${validTargets}, or no target for all`)
   }
 
   const client = new Client({
@@ -52,7 +48,7 @@ export async function runMigrations(
           new URL(`../../../database/migrations/${module.folder}/`, import.meta.url),
         ),
         migrationsSchema: module.schema,
-        migrationsTable: '__drizzle_migrations',
+        migrationsTable: migrationTable,
       })
       if (connectionError) throw connectionError
       log('Migration completed', { module: module.name })
