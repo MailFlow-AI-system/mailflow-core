@@ -12,12 +12,14 @@ import type { MiddlewareHandler } from 'hono'
 import type { Logger } from 'pino'
 
 import type { Observability } from '../observability/observability.js'
+import { createWorkspaceOperationTelemetry } from './workspaceOperationTelemetry.js'
 
 const durationHistogramBoundaries = [
   0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
 ]
 
 export function requestLogger(logger: Logger, observability: Observability): MiddlewareHandler {
+  const recordWorkspaceOperation = createWorkspaceOperationTelemetry(observability.meter)
   const requestDuration: Histogram = observability.meter.createHistogram(
     'http.server.request.duration',
     {
@@ -93,6 +95,14 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
         span.setAttribute('http.route', route)
         span.setAttribute('http.response.status_code', status)
         requestDuration.record(durationSeconds, attributes)
+        const workspaceAttributes = recordWorkspaceOperation(
+          method,
+          route,
+          status,
+          requestFailed,
+          durationSeconds,
+        )
+        if (workspaceAttributes) span.setAttributes(workspaceAttributes)
         if (authOperation !== undefined) {
           const authResult = requestFailed
             ? 'unavailable'
@@ -121,6 +131,7 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
             route,
             status,
             durationMs,
+            ...workspaceAttributes,
             ...correlation,
           },
           'Request completed',
