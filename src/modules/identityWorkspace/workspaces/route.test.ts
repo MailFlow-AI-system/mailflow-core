@@ -26,6 +26,18 @@ function fixture(authenticated = true) {
 }
 
 describe('workspace HTTP contracts', () => {
+  it('fails closed with a sanitized response when the shared budget is unavailable', async () => {
+    const { app, reader, budget } = fixture()
+    budget.mockRejectedValue(new Error('postgres://private-credentials/internal'))
+    const response = await app.request('/api/v1/workspaces')
+    expect(response.status).toBe(503)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(await response.json()).toMatchObject({
+      code: 'workspace_control_unavailable',
+      detail: 'Workspace access is temporarily unavailable. Please retry later.',
+    })
+    expect(reader.list).not.toHaveBeenCalled()
+  })
   it('does not install workspace authority on unrelated routes', async () => {
     const { app, budget } = fixture(false)
     app.get('/health', (context) => context.json({ live: true }))
