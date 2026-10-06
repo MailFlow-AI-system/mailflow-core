@@ -41,8 +41,13 @@ values at process startup; the application does not load `.env` files.
 Migration command suffixes are `identity-workspace` and `mail`. The application uses
 `DATABASE_URL`; migration commands require `DIRECT_URL` for a direct connection to
 the same database, with no fallback. Modules own separate schemas and migration
-histories. Apply the Mail
-migration before using Inbox; its seed is idempotent and creates no users.
+histories. Apply the Mail migration before using Inbox; its seed is idempotent
+and creates no users.
+
+Register each migration module in `src/shared/database/migrationModules.ts`, in
+execution order. The runner and Drizzle Kit configs share its folder and ledger
+metadata. The test suite rejects unregistered migration folders and missing
+journals; adding a module does not require changing the runner.
 
 ## Structure
 
@@ -81,7 +86,7 @@ Wait for CI enabled. Configure these service settings in Railway; workers and
 Collectors do not run migrations. The command runs from the deployment image and
 reads the environment's Infisical-synced `DIRECT_URL` without a CLI login.
 
-The runner holds one PostgreSQL session advisory lock across both modules. It
+The runner holds one PostgreSQL session advisory lock across all selected modules. It
 allows 10 seconds to connect, 15 seconds to acquire locks, and 120 seconds per
 statement; the process deadline is 280 seconds. Each module commits separately.
 A failed module rolls back its transaction and stops the pre-deploy; rerunning
@@ -100,7 +105,8 @@ concurrency tests against disposable PostgreSQL. To run those tests locally, set
 `MAILFLOW_MIGRATIONS_TEST_DATABASE_URL` to a disposable instance whose role can
 create/drop test databases and event triggers, then run `bun run test`. Never use
 a shared application database for this test variable. `scripts/smokeImage.sh`
-also applies and repeats migrations using the final Node-only image.
+also applies and repeats migrations using the final Node-only image, checking
+ledger hashes and timestamps against the shipped journals instead of fixed counts.
 
 ## Listening
 
@@ -109,6 +115,12 @@ ordering, and session lock. Drizzle Kit remains a development tool for generatio
 and metadata checks. Migrations require a separate direct connection because Neon
 transaction pooling cannot preserve a session lock. Runtime database settings
 remain independent of migration credentials and longer statement timeouts.
+
+An explicit shared registry keeps execution order reviewable and prevents
+generation and deployment metadata from diverging. Runtime directory discovery
+was rejected because folder names alone do not define ledger schemas or ordering.
+Migration failure logs retain safe diagnostic fields from nested PostgreSQL errors
+without printing connection strings, SQL statements, parameters, or raw messages.
 
 Migrations must remain compatible with the previous running application during
 pre-deploy. Rolling back a Railway image does not revert database changes; use a
