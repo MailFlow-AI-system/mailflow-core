@@ -26,6 +26,11 @@ function fixture(authenticated = true) {
 }
 
 describe('workspace HTTP contracts', () => {
+  it('charges discovery exactly once for each list request', async () => {
+    const { app, budget } = fixture()
+    expect((await app.request('/api/v1/workspaces')).status).toBe(200)
+    expect(budget).toHaveBeenCalledTimes(1)
+  })
   it('fails closed with a sanitized response when the shared budget is unavailable', async () => {
     const { app, reader, budget } = fixture()
     budget.mockRejectedValue(new Error('postgres://private-credentials/internal'))
