@@ -28,7 +28,59 @@ Initial discovery regression failed with 500; the controlled response made it
 pass. Full Core check passed with the isolated PostgreSQL database (166 tests,
 including the selection regression). No schema changes.
 
-Phase 6 is **not complete**: correlated operational telemetry/ingestion, measured
+Phase 6 is **not complete**: environment telemetry/ingestion, measured
 HTTP abuse exercise, browser recovery evidence, the previously reproduced
 parallel SSR failure, final development integration and environment smoke remain.
 No external deployment, DNS, cookies or observability configuration was changed.
+
+## Workspace telemetry and local ingestion
+
+`mailflow.workspace.operation.count` and `mailflow.workspace.operation.duration`
+record only four operations (`list`, `context`, `entry`, `selection`) and five
+results (`success`, `denied`, `rate_limited`, `unavailable`, `failure`). Route
+templates are used, never request URLs, tenant slugs or user IDs. The same bounded
+attributes are added to the existing request span and completion log; existing
+requestId/traceId/spanId provide correlation without becoming metric labels.
+
+401/403/404 are expected denials; 429 is a rate-limit rejection; 503 is controlled
+unavailability; 5xx other than 503, redirects and escaped exceptions are failures.
+These classifications do not inspect response bodies or error messages.
+
+The permanent telemetry regression started red (no workspace samples), then
+passed. It checks seven status outcomes and absence of identity, slug, query PII,
+cookies and body markers in recorded logs, metrics and spans. Full Core check:
+167 tests, lint, format, typecheck and build passed.
+
+Local smoke command (Node 24/Bun 1.4.1):
+
+```sh
+bun run tsx --conditions=development test/workspaceSwitching/telemetrySmoke.ts
+```
+
+The smoke uses the real application HTTP middleware and OTLP exporters with
+synthetic auth/readers/budget outcomes. It does not connect to PostgreSQL or prove
+production auth. The endpoint is fixed to loopback port 14318; it reads no remote
+telemetry credentials. Collector config:
+`observability/otel-collector.workspace-local.yaml`, image
+`otel/opentelemetry-collector-contrib:0.143.0`.
+
+Actual collector debug output contained ResourceSpans and ResourceMetrics for
+success, denied, rate_limited and unavailable, including both workspace metric
+names and trace ID `11111111111111111111111111111111`. The matching Core completion
+logs contained that trace ID. This proves **local OTLP ingestion**, not Grafana
+Cloud ingestion, browser Faro correlation or remote alert delivery.
+
+## Operational views / proposed alerts
+
+Use the existing Grafana stack after its environment gate, not a new platform:
+
+- Operation traffic and outcome proportions, grouped only by operation/result.
+- Duration percentiles by operation; compare to the environment's agreed SLO.
+- Separate access denials/rate limits from unavailable/failure outcomes.
+- Investigate failures through trace IDs in completion logs, not user IDs in labels.
+
+Proposed alerts (not activated): unavailable/failure ratio above 5% for five
+minutes with at least 20 operations; sustained rate-limited ratio above 20% for
+ten minutes as a warning, not a paging authorization incident. These are initial
+review thresholds, not established SLOs. Confirm exporter naming/unit translation
+and data presence before creating queries. No per-tenant dimensions or alerts.
