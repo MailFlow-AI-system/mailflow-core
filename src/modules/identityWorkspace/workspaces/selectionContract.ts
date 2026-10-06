@@ -35,5 +35,6 @@ export const workspaceSelectionRoute = createRoute({
     413: error,
     429: error,
     500: error,
+    503: error,
   },
 })

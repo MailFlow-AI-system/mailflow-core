@@ -22,6 +22,10 @@ const problem = z.object({
   requestId: z.string().optional(),
 })
 const errors = {
+  503: {
+    description: 'Workspace access control is temporarily unavailable',
+    content: { 'application/problem+json': { schema: problem } },
+  },
   403: {
     description: 'The session no longer matches the expected identity',
     content: { 'application/problem+json': { schema: problem } },

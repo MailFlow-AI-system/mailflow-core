@@ -21,7 +21,17 @@ export function authorizeWorkspaceDiscovery(consumeBudget: DiscoveryBudget): Wor
         detail: 'The authenticated identity has changed.',
         code: 'workspace_identity_changed',
       })
-    const retryAfter = await consumeBudget(session.user.id)
+    let retryAfter: number
+    try {
+      retryAfter = await consumeBudget(session.user.id)
+    } catch {
+      return problemDetailsResponse(context, {
+        title: 'Service unavailable',
+        status: 503,
+        detail: 'Workspace access is temporarily unavailable. Please retry later.',
+        code: 'workspace_control_unavailable',
+      })
+    }
     if (retryAfter) {
       context.header('Retry-After', String(retryAfter))
       return problemDetailsResponse(context, {
