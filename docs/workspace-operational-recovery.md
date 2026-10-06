@@ -66,9 +66,12 @@ Initial discovery regression failed with 500; the controlled response made it
 pass. Full Core check passed with the isolated PostgreSQL database (166 tests,
 including the selection regression). No schema changes.
 
-Phase 6 is **not complete**: environment telemetry/ingestion,
-browser recovery evidence, the previously reproduced
-parallel SSR failure, final development integration and environment smoke remain.
+Phase 6 is **not complete**: real browser-to-Core telemetry ingestion/correlation
+and approved environment smoke remain. Browser recovery, configured concurrent
+startup, compiled Worker SSR and development integration were subsequently
+validated in the Web checkout; see its companion operational document. These
+local checks do not prove the TanStack resolver race universally eliminated or
+the real DNS/TLS/cookie topology approved.
 No external deployment, DNS, cookies or observability configuration was changed.
 
 ## Workspace telemetry and local ingestion
