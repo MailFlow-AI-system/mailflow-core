@@ -18,7 +18,8 @@ Dockerfile
 README.md
 docs
 compose.yaml
-database
+database/configs
+database/migrations/**/meta/*_snapshot.json
 src/**/*.test.ts
 src/**/*.spec.ts
 *.log
