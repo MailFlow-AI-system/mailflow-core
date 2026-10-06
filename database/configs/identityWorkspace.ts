@@ -1,8 +1,8 @@
 import { defineConfig } from 'drizzle-kit'
 
-import { loadConfig } from '../../src/shared/config/env.js'
+import { loadMigrationConfig } from '../../src/shared/database/migrationConfig.js'
 
-const config = loadConfig(process.env)
+const config = loadMigrationConfig(process.env)
 
 export default defineConfig({
   dialect: 'postgresql',
@@ -10,7 +10,7 @@ export default defineConfig({
   schemaFilter: 'identity_workspace',
   out: './database/migrations/identityWorkspace',
   dbCredentials: {
-    url: config.databaseUrl,
+    url: config.directUrl,
   },
   migrations: {
     schema: 'identity_workspace_migrations',
