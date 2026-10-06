@@ -43,6 +43,7 @@ describe('workspace HTTP contracts', () => {
     const response = await app.request('/api/v1/workspaces?userId=other')
     expect(reader.list).toHaveBeenCalledWith('actor', undefined)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('x-workspace-identity')).toBe('actor')
     expect(await response.json()).toEqual({ items: [], nextCursor: null })
   })
   it('uses the same unavailable response for absent and unauthorized workspaces', async () => {

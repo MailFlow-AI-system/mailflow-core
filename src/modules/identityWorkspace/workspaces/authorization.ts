@@ -12,6 +12,15 @@ export function authorizeWorkspaceDiscovery(consumeBudget: DiscoveryBudget): Wor
         detail: 'Authentication is required.',
         code: 'authentication_required',
       })
+    context.header('X-Workspace-Identity', session.user.id)
+    const expectedIdentity = context.req.header('X-Workspace-Identity')
+    if (expectedIdentity && expectedIdentity !== session.user.id)
+      return problemDetailsResponse(context, {
+        title: 'Forbidden',
+        status: 403,
+        detail: 'The authenticated identity has changed.',
+        code: 'workspace_identity_changed',
+      })
     const retryAfter = await consumeBudget(session.user.id)
     if (retryAfter) {
       context.header('Retry-After', String(retryAfter))

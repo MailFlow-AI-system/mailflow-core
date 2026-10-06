@@ -138,6 +138,7 @@ app.get('/__fixture', async (context) => {
     currentId: fixture.acme,
     fallbackHost: `${[fixture.acme, fixture.northwind].sort()[0] === fixture.acme ? fixture.acmeSlug : fixture.northwindSlug}.workspace.test`,
     unrelatedId: fixture.globex,
+    unrelatedHost: `${fixture.globexSlug}.workspace.test`,
     controlKey,
     selections,
     globalMailCalls,

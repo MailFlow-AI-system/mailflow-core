@@ -22,6 +22,10 @@ const problem = z.object({
   requestId: z.string().optional(),
 })
 const errors = {
+  403: {
+    description: 'The session no longer matches the expected identity',
+    content: { 'application/problem+json': { schema: problem } },
+  },
   400: {
     description: 'Invalid selector or cursor',
     content: { 'application/problem+json': { schema: problem } },
