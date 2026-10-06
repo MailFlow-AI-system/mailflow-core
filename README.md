@@ -75,7 +75,8 @@ Infisical injects environment variables before a process starts. Application cod
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | PostgreSQL connection URL |
+| `DATABASE_URL` | Yes | — | Application PostgreSQL connection URL |
+| `DIRECT_URL` | Migrations only | — | Direct connection to the same database; no fallback |
 | `APP_ENV` | No | `development` | `development`, `test`, `staging`, or `production` |
 | `HOST` | No | `0.0.0.0` | API bind address |
 | `PORT` | No | `8080` | API port |
@@ -110,11 +111,13 @@ bun run db:generate:identity-workspace
 bun run db:generate:mail
 bun run db:check:identity-workspace
 bun run db:check:mail
+bun run db:migrate
+# Or migrate one module:
 bun run db:migrate:identity-workspace
 bun run db:migrate:mail
 ```
 
-Schema files and migration histories are created with the first database-backed business slice.
+Migration histories for Identity Workspace and Mail are promoted from development without modifying SQL or journal timestamps. Generate new migrations on development and promote reviewed files with their consuming release.
 There is intentionally no `drizzle-kit push` script. Database changes use generated, reviewed, versioned SQL migrations.
 
 ## HTTP surface
@@ -208,10 +211,53 @@ Tests execute on Node.js through Vitest. Current tests cover configuration valid
 2. type-check and test;
 3. compile the production output.
 
-GitHub Actions configuration is intentionally deferred to the next delivery task. It should start by reproducing the local gate on pull requests, then grow with Testcontainers for disposable PostgreSQL integration tests, production-image smoke tests, immutable SHA-tagged image publication, homologation, and promotion of the same image digest to production. Infisical will authenticate GitHub Actions through OIDC; secrets will never be embedded in images.
+GitHub Actions runs the local gate, migration integration tests on disposable PostgreSQL, and a production-image smoke test. Railway waits for CI before deployment and applies migrations in the API pre-deploy command. CI uses only disposable database credentials; application secrets remain in Infisical and are never embedded in images.
 
 ## Future evolution
 
 The MVP remains a modular Core with separate API and worker processes. Audience is the first planned bounded-context extraction. That milestone introduces a thin Gateway/BFF and RabbitMQ after its equivalence gate; Redis remains independently activated only for a proven low-latency ephemeral-state workload. Later services are extracted only for measured ownership, scaling, reliability, or release needs.
 
 The complete architecture, decisions, trade-offs, and diagrams live in the [MailFlow Architecture Hub](https://mailflow-architecture-hub.vercel.app/).
+
+
+## Railway migrations
+
+Use `node dist/entrypoints/migrate.js` as the API service's pre-deploy command in
+development, staging, and production. Set Pre-deploy Timeout to 300 seconds,
+Healthcheck Path to `/health/ready`, and Healthcheck Timeout to 300 seconds. Keep
+Wait for CI enabled. Configure these service settings in Railway; workers and
+Collectors do not run migrations. The command runs from the deployment image and
+reads the environment's Infisical-synced `DIRECT_URL` without a CLI login.
+
+The runner holds one PostgreSQL session advisory lock across both modules. It
+allows 10 seconds to connect, 15 seconds to acquire locks, and 120 seconds per
+statement; the process deadline is 280 seconds. Each module commits separately.
+A failed module rolls back its transaction and stops the pre-deploy; rerunning
+resumes from the existing ledgers. Do not automatically retry or seed databases.
+
+Before enabling pre-deploy, compare each Neon branch's schemas and migration
+ledger hashes/timestamps with the SQL and journals shipped in that branch's image.
+Existing schemas without matching ledgers require investigation before activation.
+Confirm `DATABASE_URL` and non-pooled `DIRECT_URL` address the same Neon endpoint
+and database, migration permissions, and the available restore window. Promote
+through reviewed PRs in development, staging, and main order. Configure pre-deploy
+only after the target image includes the runner and migrations.
+
+CI runs migration installation, upgrade, repetition, rollback, recovery, and
+concurrency tests against disposable PostgreSQL. To run those tests locally, set
+`MAILFLOW_MIGRATIONS_TEST_DATABASE_URL` to a disposable instance whose role can
+create/drop test databases and event triggers, then run `bun run test`. Never use
+a shared application database for this test variable. `scripts/smokeImage.sh`
+also applies and repeats migrations using the final Node-only image.
+
+## Listening
+
+Local and CD commands share the Drizzle ORM runner so they use the same ledgers,
+ordering, and session lock. Drizzle Kit remains a development tool for generation
+and metadata checks. Migrations require a separate direct connection because Neon
+transaction pooling cannot preserve a session lock. Runtime database settings
+remain independent of migration credentials and longer statement timeouts.
+
+Migrations must remain compatible with the previous running application during
+pre-deploy. Rolling back a Railway image does not revert database changes; use a
+reviewed forward repair or the verified Neon recovery procedure when needed.
