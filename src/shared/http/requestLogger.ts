@@ -13,6 +13,7 @@ import type { Logger } from 'pino'
 
 import type { Observability } from '../observability/observability.js'
 import { createWorkspaceOperationTelemetry } from './workspaceOperationTelemetry.js'
+import { workspaceTelemetryRoute } from './workspaceTelemetryRoute.js'
 
 const durationHistogramBoundaries = [
   0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
@@ -48,8 +49,9 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
 
   return async (honoContext, next) => {
     const startedAt = performance.now()
-    const initialRoute = honoContext.req.routePath || 'unknown'
     const method = honoContext.req.method
+    const workspaceRoute = workspaceTelemetryRoute(method, new URL(honoContext.req.url).pathname)
+    const initialRoute = workspaceRoute ?? (honoContext.req.routePath || 'unknown')
     const authOperation = getAuthOperation(method, honoContext.req.url)
     let requestFailed = false
     const parentContext = propagation.extract(
@@ -82,7 +84,7 @@ export function requestLogger(logger: Logger, observability: Observability): Mid
         const durationSeconds = (performance.now() - startedAt) / 1000
         const durationMs = Math.round(durationSeconds * 1000)
         const status = honoContext.res.status
-        const route = honoContext.req.routePath || initialRoute
+        const route = workspaceRoute ?? (honoContext.req.routePath || initialRoute)
         const attributes: Attributes = {
           'http.request.method': method,
           'http.route': route,

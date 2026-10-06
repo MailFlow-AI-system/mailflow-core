@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { drizzle } from 'drizzle-orm/node-postgres'
-import pino from 'pino'
 import { createApp } from '../../src/app.js'
 import {
   assertWorkspaceDatabaseRole,
@@ -14,7 +13,8 @@ import {
 } from '../../src/modules/identityWorkspace/index.js'
 import { testClientIp } from '../../src/modules/identityWorkspace/onboarding/utils/testClientIp.test-support.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
-import { loadConfig } from '../../src/shared/config/env.js'
+import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/workspaces/types.js'
+import { createTelemetryFixture } from './telemetryFixture.js'
 
 const fixture = await createWorkspaceTestFixture()
 await assertWorkspaceDatabaseRole(fixture.pool)
@@ -52,12 +52,20 @@ let selections = 0
 let failNext = false
 let revokeAfterSelection = false
 let globalMailCalls = 0
+let failNextBudget = false
+const budget = createDiscoveryBudget(fixture.pool)
+const consumeBudget: DiscoveryBudget = async (actor) => {
+  if (failNextBudget) {
+    failNextBudget = false
+    throw new Error('Synthetic budget outage')
+  }
+  return budget(actor)
+}
+const telemetry = await createTelemetryFixture()
 const app = createApp({
-  config: loadConfig({
-    DATABASE_URL: process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL,
-    LOG_LEVEL: 'silent',
-  }),
-  logger: pino({ enabled: false }),
+  config: telemetry.config,
+  logger: telemetry.logger,
+  observability: telemetry.observability,
   checkDatabase: async () => {
     await fixture.pool.query('select 1')
   },
@@ -74,7 +82,7 @@ const app = createApp({
   allowedAuthOrigins: authConfig.allowedOrigins,
   workspaces: {
     reader: createWorkspaceReader(fixture.pool),
-    consumeBudget: createDiscoveryBudget(fixture.pool),
+    consumeBudget,
   },
   workspaceEntry: {
     reader: {
@@ -86,11 +94,11 @@ const app = createApp({
         return entryReader.resolve(actor)
       },
     },
-    consumeBudget: createDiscoveryBudget(fixture.pool),
+    consumeBudget,
   },
   workspaceSelection: {
     allowedOrigins: authConfig.allowedOrigins,
-    consumeBudget: createDiscoveryBudget(fixture.pool),
+    consumeBudget,
     selection: {
       select: async (actor, target) => {
         selections += 1
@@ -118,6 +126,11 @@ const app = createApp({
   },
 })
 // This server is loopback-only, requires the isolated test DB, and is not built/deployed.
+app.get('/__telemetry', (context) => {
+  if (context.req.header('x-fixture-control') !== controlKey)
+    return context.json({ error: 'Forbidden' }, 403)
+  return context.json(telemetry.snapshot())
+})
 app.get('/__fixture', async (context) => {
   const preference = await fixture.admin.query(
     'select workspace_id from identity_workspace.workspace_preference where user_id=$1',
@@ -172,8 +185,10 @@ app.post('/__fixture/control', async (context) => {
     failNext = false
     revokeAfterSelection = false
     failNextEntry = false
+    failNextBudget = false
   } else if (action === 'fail-next') failNext = true
   else if (action === 'fail-next-entry') failNextEntry = true
+  else if (action === 'fail-next-budget') failNextBudget = true
   else if (action === 'expire-session')
     await fixture.admin.query('delete from identity_workspace.session where user_id=$1', [
       fixture.userId,
@@ -203,6 +218,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
         await fixture.admin.query('delete from identity_workspace.rate_limit where key=$1', [
           `workspace-discovery:${emptyUser.user.id}`,
         ])
+        await telemetry.observability.shutdown()
         await fixture.close()
         process.exit(0)
       })()
