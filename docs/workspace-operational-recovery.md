@@ -66,8 +66,8 @@ Initial discovery regression failed with 500; the controlled response made it
 pass. Full Core check passed with the isolated PostgreSQL database (166 tests,
 including the selection regression). No schema changes.
 
-Phase 6 is **not complete**: real browser-to-Core telemetry ingestion/correlation
-and approved environment smoke remain. Browser recovery, configured concurrent
+Phase 6 is **not complete**: approved environment ingestion/smoke remain.
+Real browser-to-Core local correlation is now validated below. Browser recovery, configured concurrent
 startup, compiled Worker SSR and development integration were subsequently
 validated in the Web checkout; see its companion operational document. These
 local checks do not prove the TanStack resolver race universally eliminated or
@@ -125,3 +125,42 @@ minutes with at least 20 operations; sustained rate-limited ratio above 20% for
 ten minutes as a warning, not a paging authorization incident. These are initial
 review thresholds, not established SLOs. Confirm exporter naming/unit translation
 and data presence before creating queries. No per-tenant dimensions or alerts.
+
+## Real browser correlation and early-middleware outcomes — 2026-10-06
+
+The real Chromium/Faro → Web gateway → Core → local OTLP Collector test exposed
+an instrumentation gap: when discovery middleware returned 429, Hono's route
+remained `/api/v1/workspaces/*`. The completion span/log lacked a workspace
+operation/result, so the original handler-only telemetry test was insufficient.
+A new actual-application regression started red (zero workspace counter samples)
+and passed after resolving only the four known operation route templates before
+middleware execution. Early 401/429/503 are now classified consistently. Unknown
+paths/methods are not copied into workspace dimensions; tenant selectors and
+queries are never added to metric labels. Authorization and budgets are unchanged.
+
+The opt-in browser fixture (`MAILFLOW_WORKSPACE_TELEMETRY_LOCAL=true`) uses the
+real NodeSDK/OTLP exporters, sample rate 1 and a fixed loopback endpoint 14318.
+Its bounded in-memory completion records are schema-whitelisted and available
+only through the test control key, not a production route. Normal browser tests
+remain silent/no-op; no remote telemetry credentials are read. SDK shutdown
+flushes telemetry before the fixture pool closes.
+
+Latest real browser test passed in 28.1 seconds, one worker, zero retries/skips.
+It verifies five results: success (200), denied (404), injected selection failure
+(Core 500 → Web 502), injected control outage (503), and real shared-budget
+exhaustion (429). Authentication and restricted PostgreSQL are real; outage
+injection is explicitly a fixture double, not proof of a physical DB outage.
+For each request, the browser's actual SDK-created traceparent matches the Core
+completion trace ID; Collector output matches that trace, Core span ID and the
+browser parent span ID. Both workspace metric names were actually ingested.
+This preserves correlation through Web's forwarding gateway; it does not claim
+an additional instrumented Web-server span or Grafana Cloud acceptance.
+
+Web's same test checks real Faro payloads for tenant/identity/credential and
+composer-content leakage; the companion Web document records the discovered
+plain-host sanitization correction. Full Core quality gates passed: 173 tests in
+39 files, lint, formatting, typecheck and build, with the isolated database.
+
+Real domains/TLS/cookies, trusted proxy/IP, live provider delivery, remote
+Grafana ingestion and alert activation remain deferred. Use the companion Web
+`docs/workspace-rollout-manual.md` when the developer resumes that final stage.
