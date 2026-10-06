@@ -93,6 +93,33 @@ describe('runMigrations', () => {
     expect(mocks.client).not.toHaveBeenCalled()
   })
 
+  it('uses registered targets and ledger metadata without another runner declaration', async () => {
+    vi.doMock('./migrationModules.js', () => ({
+      migrationModules: [{ name: 'billing', folder: 'billing', schema: 'billing_ledger' }],
+      migrationTable: 'migration_history',
+    }))
+    vi.resetModules()
+    try {
+      const { runMigrations: runRegisteredMigrations } = await import('./migrations.js')
+      await runRegisteredMigrations(environment, ['billing'])
+      expect(mocks.migrate).toHaveBeenCalledWith(
+        { database: true },
+        {
+          migrationsFolder: expect.stringContaining('/database/migrations/billing/'),
+          migrationsSchema: 'billing_ledger',
+          migrationsTable: 'migration_history',
+        },
+      )
+      await expect(runRegisteredMigrations(environment, ['unknown'])).rejects.toThrow(
+        'Invalid migration target; use billing, or no target for all',
+      )
+      expect(mocks.client).toHaveBeenCalledOnce()
+    } finally {
+      vi.doUnmock('./migrationModules.js')
+      vi.resetModules()
+    }
+  })
+
   it('closes the connection when connecting fails', async () => {
     mocks.connect.mockRejectedValue(new Error('connection failed'))
     await expect(runMigrations(environment)).rejects.toThrow('connection failed')

@@ -130,13 +130,12 @@ for attempt in 1 2; do
     --env DIRECT_URL="${database_url}" \
     --env DATABASE_URL=postgresql://invalid:invalid@127.0.0.1:1/invalid \
     "${image_tag}" node dist/entrypoints/migrate.js
+  "${docker_bin}" run --rm \
+    --name "${migration_name}" \
+    --network "${network_name}" \
+    --env DIRECT_URL="${database_url}" \
+    "${image_tag}" node dist/entrypoints/verifyMigrationLedgers.js
 done
-ledger_counts="$("${docker_bin}" exec "${database_name}" psql -U mailflow -d mailflow -Atc \
-  'SELECT (SELECT count(*) FROM identity_workspace_migrations.__drizzle_migrations), (SELECT count(*) FROM mail_migrations.__drizzle_migrations)')"
-if [[ "${ledger_counts//$'\r'/}" != '2|1' ]]; then
-  printf 'Migration ledgers did not match the three shipped migrations.\n' >&2
-  exit 1
-fi
 
 printf 'Starting API and worker\n'
 api_publish="127.0.0.1::${api_container_port}"
