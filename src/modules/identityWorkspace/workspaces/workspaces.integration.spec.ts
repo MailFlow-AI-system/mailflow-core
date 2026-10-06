@@ -81,6 +81,34 @@ describe('workspace PostgreSQL authority', () => {
       client.release()
     }
   })
+  it('keeps explicit contexts isolated across two live identities sharing the restricted pool', async () => {
+    const reader = createWorkspaceReader(fixture.pool)
+    const results = await Promise.all(
+      Array.from({ length: 24 }, async (_, index) => {
+        const userId = index % 2 ? fixture.otherId : fixture.userId
+        const [acme, northwind, globex] = await Promise.all([
+          reader.context(userId, fixture.acmeSlug),
+          reader.context(userId, fixture.northwindSlug),
+          reader.context(userId, fixture.globexSlug),
+        ])
+        return { acme, northwind, globex }
+      }),
+    )
+    results.forEach((result, index) => {
+      if (index % 2) {
+        expect(result.acme).toBeNull()
+        expect(result.northwind).toMatchObject({ id: fixture.northwind, role: 'owner' })
+        expect(result.globex).toMatchObject({ id: fixture.globex, role: 'owner' })
+      } else {
+        expect(result.acme).toMatchObject({ id: fixture.acme, role: 'owner' })
+        expect(result.northwind).toMatchObject({ id: fixture.northwind, role: 'member' })
+        expect(result.globex).toBeNull()
+      }
+    })
+    expect(
+      (await fixture.pool.query('select * from identity_workspace.organization')).rows,
+    ).toEqual([])
+  })
   it('enforces unique slugs, unique memberships and at most one owner', async () => {
     await expect(
       fixture.admin.query('update identity_workspace.organization set slug = $1 where id = $2', [
