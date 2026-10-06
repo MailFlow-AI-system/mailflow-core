@@ -145,4 +145,27 @@ describe('workspace PostgreSQL authority', () => {
     expect(outcomes.filter((x) => x === 0)).toHaveLength(120)
     expect(outcomes.filter((x) => x > 0)).toHaveLength(1)
   })
+  it('keeps another identity available during a bounded burst across independent budget instances', async () => {
+    const attackerId = `budget-burst-${randomUUID()}`
+    const observerId = `budget-observer-${randomUUID()}`
+    const firstInstance = createDiscoveryBudget(fixture.pool)
+    const secondInstance = createDiscoveryBudget(fixture.pool)
+    try {
+      const [burst, observations] = await Promise.all([
+        Promise.all(
+          Array.from({ length: 150 }, (_, index) =>
+            (index % 2 ? firstInstance : secondInstance)(attackerId),
+          ),
+        ),
+        Promise.all(Array.from({ length: 20 }, () => secondInstance(observerId))),
+      ])
+      expect(burst.filter((retryAfter) => retryAfter === 0)).toHaveLength(120)
+      expect(burst.filter((retryAfter) => retryAfter > 0)).toHaveLength(30)
+      expect(observations).toEqual(Array(20).fill(0))
+    } finally {
+      await fixture.admin.query('delete from identity_workspace.rate_limit where key = any($1)', [
+        [`workspace-discovery:${attackerId}`, `workspace-discovery:${observerId}`],
+      ])
+    }
+  })
 })

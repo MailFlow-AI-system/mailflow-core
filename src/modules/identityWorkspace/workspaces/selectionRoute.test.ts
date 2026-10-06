@@ -42,6 +42,14 @@ function request(body: unknown = { workspaceId: 'target' }, requestOrigin = orig
   })
 }
 describe('workspace selection HTTP contract', () => {
+  it('does not change preferences when the budget infrastructure fails', async () => {
+    const { app, select, consumeBudget } = fixture()
+    consumeBudget.mockRejectedValueOnce(new Error('synthetic database outage'))
+    const response = await app.request(request())
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'workspace_control_unavailable' })
+    expect(select).not.toHaveBeenCalled()
+  })
   it('does not write a preference when an old tab expects a different identity', async () => {
     const { app, select, consumeBudget } = fixture()
     const input = request()
