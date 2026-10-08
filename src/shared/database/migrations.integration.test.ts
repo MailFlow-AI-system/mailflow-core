@@ -72,10 +72,16 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
       )
       expect(tables.rows).toEqual([
         { table_schema: 'identity_workspace', table_name: 'account' },
+        { table_schema: 'identity_workspace', table_name: 'invitation' },
+        { table_schema: 'identity_workspace', table_name: 'member' },
+        { table_schema: 'identity_workspace', table_name: 'onboarding_email' },
+        { table_schema: 'identity_workspace', table_name: 'onboarding_signup' },
+        { table_schema: 'identity_workspace', table_name: 'organization' },
         { table_schema: 'identity_workspace', table_name: 'rate_limit' },
         { table_schema: 'identity_workspace', table_name: 'session' },
         { table_schema: 'identity_workspace', table_name: 'user' },
         { table_schema: 'identity_workspace', table_name: 'verification' },
+        { table_schema: 'identity_workspace', table_name: 'workspace_preference' },
         { table_schema: 'mail', table_name: 'message' },
       ])
     } finally {
