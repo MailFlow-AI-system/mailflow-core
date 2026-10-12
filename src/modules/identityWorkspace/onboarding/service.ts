@@ -6,8 +6,14 @@ import { SignupConflict } from './errors.js'
 import { idempotencyKeySchema, signupSchema } from './schemas.js'
 import { createSignupActions } from './signupActions.js'
 import { inOnboardingTransaction } from './transaction.js'
-import type { OnboardingService, SignupActionsFactory, SignupReceipt } from './types.js'
+import type {
+  OnboardingService,
+  SignupActionsFactory,
+  SignupReceipt,
+  SignupResult,
+} from './types.js'
 import { createOnboardingCipher } from './utils/cipher.js'
+import { isSignupConflictCause } from './utils/signupConflict.js'
 import { uuidV7 } from './utils/uuidV7.js'
 
 export function createOnboardingService(
@@ -24,7 +30,7 @@ export function createOnboardingService(
       const fingerprint = createHmac('sha256', config.secret)
         .update(JSON.stringify(input))
         .digest('hex')
-      return inOnboardingTransaction(pool, async (client) => {
+      return inOnboardingTransaction<SignupResult>(pool, async (client) => {
         await client.query("select set_config('mailflow.onboarding_key', $1, true)", [keyHash])
         await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [keyHash])
         const receipt = await client.query<SignupReceipt>(
@@ -59,6 +65,9 @@ export function createOnboardingService(
         await actions.register(input)
         await actions.provision(input)
         return { status: 'verification-pending' }
+      }).catch((error: unknown) => {
+        if (isSignupConflictCause(error)) throw new SignupConflict()
+        throw error
       })
     },
   }
