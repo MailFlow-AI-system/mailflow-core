@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import type { Pool, PoolClient } from 'pg'
 import type { AuthSession } from '../infrastructure/types/auth.js'
+import type { AuthOriginPolicy } from '../infrastructure/types/authConfig.js'
 
 export type WorkspaceSummary = {
   id: string
@@ -22,6 +23,7 @@ export type WorkspaceSelection = {
 export type WorkspaceSelectionDependencies = {
   selection: WorkspaceSelection
   allowedOrigins: string[]
+  isAllowedOrigin?: AuthOriginPolicy
   consumeBudget: DiscoveryBudget
 }
 export type WorkspaceRouteEnvironment = { Variables: { authSession: AuthSession } }

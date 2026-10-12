@@ -24,6 +24,7 @@ export function createApp({
   checkDatabase,
   auth,
   allowedAuthOrigins,
+  isAllowedAuthOrigin,
   mailRepository,
   workspaces,
   onboarding,
@@ -38,6 +39,7 @@ export function createApp({
   installAuthRoutes(app, {
     auth,
     allowedOrigins: allowedAuthOrigins,
+    ...(isAllowedAuthOrigin ? { isAllowedOrigin: isAllowedAuthOrigin } : {}),
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))

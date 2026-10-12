@@ -1,4 +1,17 @@
 import { z } from 'zod'
+import type { WorkspaceSwitchingMode } from './configTypes.js'
+
+export function workspaceSwitchingMode(environment: NodeJS.ProcessEnv): WorkspaceSwitchingMode {
+  const local = workspaceLocalSwitchingEnabled(environment)
+  const remote =
+    z.enum(['true', 'false']).default('false').parse(environment.WORKSPACE_SWITCHING_ENABLED) ===
+    'true'
+  if (local && remote)
+    throw new Error('Local and remote workspace switching are mutually exclusive')
+  if (remote && !workspaceReadsEnabled(environment))
+    throw new Error('Remote workspace switching requires authorized workspace reads')
+  return remote ? 'remote' : local ? 'local' : 'disabled'
+}
 
 export function workspaceReadsEnabled(environment: NodeJS.ProcessEnv) {
   return (

@@ -13,6 +13,35 @@ const validEnvironment = {
 }
 
 describe('loadAuthConfig', () => {
+  it('binds remote switching to an exact HTTPS Web base and keeps the cookie scope narrow', () => {
+    const environment = {
+      ...validEnvironment,
+      APP_ENV: 'staging',
+      BETTER_AUTH_URL: 'https://api.staging.example.com',
+      SITE_URL: 'https://site.staging.example.com',
+      WEB_APP_URL: 'https://app.staging.example.com',
+      WORKSPACE_WEB_BASE_ORIGIN: 'https://app.staging.example.com',
+      WORKSPACE_READ_ENABLED: 'true',
+      WORKSPACE_SWITCHING_ENABLED: 'true',
+    }
+    expect(loadAuthConfig(environment).workspaceDeployment).toEqual({
+      baseHost: 'app.staging.example.com',
+      webOrigin: 'https://app.staging.example.com',
+    })
+    for (const origin of [
+      'http://app.staging.example.com',
+      'https://app.other.example.com',
+      'https://app.staging.example.com:8443',
+      'https://user:password@app.staging.example.com',
+      'https://app.staging.example.com/path',
+    ]) {
+      expect(() => loadAuthConfig({ ...environment, WORKSPACE_WEB_BASE_ORIGIN: origin })).toThrow()
+    }
+    expect(() => loadAuthConfig({ ...environment, WORKSPACE_WEB_BASE_ORIGIN: undefined })).toThrow()
+    expect(() =>
+      loadAuthConfig({ ...environment, SITE_URL: 'http://site.staging.example.com' }),
+    ).toThrow()
+  })
   it('uses frontend URLs as the exact credentialed origins', () => {
     expect(loadAuthConfig(validEnvironment)).toEqual({
       secret: validEnvironment.BETTER_AUTH_SECRET,
