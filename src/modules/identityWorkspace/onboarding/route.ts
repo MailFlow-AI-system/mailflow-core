@@ -4,7 +4,6 @@ import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { signupRoute } from './contract.js'
 import { SignupConflict } from './errors.js'
 import type { OnboardingRouteDependencies } from './types.js'
-import { isUniqueViolation } from './utils/uniqueViolation.js'
 
 export function createOnboardingRoutes({
   service,
@@ -71,7 +70,7 @@ export function createOnboardingRoutes({
         202,
       )
     } catch (error) {
-      if (error instanceof SignupConflict || isUniqueViolation(error))
+      if (error instanceof SignupConflict)
         return problemDetailsResponse(context, {
           title: 'Signup unavailable',
           status: 409,

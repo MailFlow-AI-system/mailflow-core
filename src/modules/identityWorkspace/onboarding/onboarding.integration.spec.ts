@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createWorkspaceTestFixture } from '../workspaces/fixtures.test-support.js'
 import { createOnboardingEnqueue } from './enqueueEmail.js'
+import { SignupConflict } from './errors.js'
 import { createOnboardingOtpHandler } from './otpHandler.js'
 import { createOnboardingService } from './service.js'
 import { createSignupActions } from './signupActions.js'
@@ -194,6 +195,10 @@ describe('transactional workspace onboarding', () => {
     )
     expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
     expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    const rejected = outcomes.find((result) => result.status === 'rejected')
+    expect(rejected?.status === 'rejected' ? rejected.reason : undefined).toBeInstanceOf(
+      SignupConflict,
+    )
     expect(
       (
         await fixture.admin.query(
@@ -210,6 +215,71 @@ describe('transactional workspace onboarding', () => {
         )
       ).rows,
     ).toHaveLength(1)
+  })
+  it('classifies an already claimed slug as a domain conflict without retaining the losing identity', async () => {
+    const slug = `claimed-${randomUUID().slice(0, 8)}`
+    const service = createOnboardingService(fixture.pool, fixture.authConfig)
+    await service.signup(inputFor(slug), randomUUID())
+    const loser = inputFor(slug)
+    await expect(service.signup(loser, randomUUID())).rejects.toBeInstanceOf(SignupConflict)
+    expect(
+      (
+        await fixture.admin.query('select id from identity_workspace."user" where email=$1', [
+          loser.email,
+        ])
+      ).rows,
+    ).toEqual([])
+  })
+  it.each(['workspace_slug_unique', 'user_email_unique'])(
+    'classifies expected conflict %s only after rollback',
+    async (constraint) => {
+      const input = inputFor()
+      const failure = new Error('Adapter query failed', { cause: { code: '23505', constraint } })
+      const service = createOnboardingService(fixture.pool, fixture.authConfig, (...args) => ({
+        ...createSignupActions(...args),
+        provision: async () => {
+          throw failure
+        },
+      }))
+      await expect(service.signup(input, randomUUID())).rejects.toBeInstanceOf(SignupConflict)
+      expect(
+        (
+          await fixture.admin.query('select id from identity_workspace."user" where email=$1', [
+            input.email,
+          ])
+        ).rows,
+      ).toEqual([])
+      expect(
+        (
+          await fixture.admin.query(
+            'select id from identity_workspace.verification where identifier=$1',
+            [`email-verification-otp-${input.email}`],
+          )
+        ).rows,
+      ).toEqual([])
+    },
+  )
+  it.each([
+    { code: '23505', constraint: 'user_pkey' },
+    { code: '23505', constraint: 'workspace_one_owner' },
+    { code: '08006' },
+  ])('preserves unexpected adapter failures as operational errors (%j)', async (cause) => {
+    const input = inputFor()
+    const failure = new Error('Synthetic operational failure', { cause })
+    const service = createOnboardingService(fixture.pool, fixture.authConfig, (...args) => ({
+      ...createSignupActions(...args),
+      provision: async () => {
+        throw failure
+      },
+    }))
+    await expect(service.signup(input, randomUUID())).rejects.toBe(failure)
+    expect(
+      (
+        await fixture.admin.query('select id from identity_workspace."user" where email=$1', [
+          input.email,
+        ])
+      ).rows,
+    ).toEqual([])
   })
   it('verifies the encrypted OTP and returns an authorized workspace login without a session', async () => {
     const input = inputFor()
