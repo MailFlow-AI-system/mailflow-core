@@ -3,25 +3,15 @@ import { serve } from '@hono/node-server'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import pino from 'pino'
 import { createApp } from '../../src/app.js'
-import {
-  createAuth,
-  createDiscoveryBudget,
-  createOnboardingBudget,
-  createOnboardingOtpHandler,
-  createOnboardingService,
-  createWorkspaceReader,
-} from '../../src/modules/identityWorkspace/index.js'
-import { assertOnboardingDatabaseRole } from '../../src/modules/identityWorkspace/onboarding/databaseRole.js'
+import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
 import { createOnboardingDispatcher } from '../../src/modules/identityWorkspace/onboarding/dispatcher.js'
 import type { IdentityRow } from '../../src/modules/identityWorkspace/onboarding/types.js'
 import { createOnboardingCipher } from '../../src/modules/identityWorkspace/onboarding/utils/cipher.js'
-import { createProtectedOtpStorage } from '../../src/modules/identityWorkspace/onboarding/utils/otpStorage.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
 import { loadConfig } from '../../src/shared/config/env.js'
 import type { BrowserSignupScenario, CapturedOnboardingEmail } from './types.js'
 
 const fixture = await createWorkspaceTestFixture()
-await assertOnboardingDatabaseRole(fixture.pool)
 const scenarios: BrowserSignupScenario[] = ['Desktop Chrome', 'Mobile Chrome'].map(
   (project, index) => ({
     project,
@@ -64,10 +54,24 @@ const dispatch = createOnboardingDispatcher({
     captured.set(message.to, messages)
   },
 })
-const auth = createAuth(drizzle(fixture.pool), config, async () => {}, undefined, {
-  otpStorage: createProtectedOtpStorage(cipher),
+const runtime = await createIdentityWorkspaceRuntime({
+  pool: fixture.pool,
+  database: drizzle(fixture.pool),
+  authConfig: config,
+  sendAccountEmail: async () => {},
+  environment: {
+    APP_ENV: 'development',
+    WORKSPACE_READ_ENABLED: 'true',
+    WORKSPACE_ONBOARDING_ENABLED: 'true',
+    WORKSPACE_SIGNUP_CUTOVER_ENABLED: 'true',
+    WORKSPACE_WEB_BASE_ORIGIN: config.webAppURL,
+  },
 })
+const auth = runtime.auth
+const onboarding = runtime.onboarding
+if (!onboarding) throw new Error('Onboarding fixture capabilities are required')
 const app = createApp({
+  ...runtime,
   config: loadConfig({
     DATABASE_URL: process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL,
     LOG_LEVEL: 'silent',
@@ -77,22 +81,9 @@ const app = createApp({
     await fixture.pool.query('select 1')
   },
   auth: { api: auth.api, handler: (request) => auth.handler(withFixtureClientIp(request)) },
-  allowedAuthOrigins: config.allowedOrigins,
-  workspaces: {
-    reader: createWorkspaceReader(fixture.pool),
-    consumeBudget: createDiscoveryBudget(fixture.pool),
-  },
   onboarding: {
-    service: createOnboardingService(fixture.pool, config),
-    handleOtp: (request) =>
-      createOnboardingOtpHandler(
-        fixture.pool,
-        config,
-        config.webAppURL,
-      )(withFixtureClientIp(request)),
-    allowedOrigin: config.siteURL,
-    consumeBudget: createOnboardingBudget(fixture.pool, config.secret),
-    closeLegacySignup: true,
+    ...onboarding,
+    handleOtp: (request) => onboarding.handleOtp(withFixtureClientIp(request)),
   },
 })
 // Loopback-only synthetic test capabilities. Never compiled into production.
