@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../../../../app.js'
 import { createDatabase } from '../../../../shared/database/client.js'
 import type { AccountEmailMessage, AccountEmailSender } from '../../accountEmails/index.js'
+import { testClientIp } from '../../onboarding/utils/testClientIp.test-support.js'
 import { loadAuthConfig } from './authConfig.js'
 import { createAuth } from './createAuth.js'
 
@@ -92,11 +93,13 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
   })
 
   it('requires OTP verification before sign-in and protects the verified user session', async () => {
+    const clientIp = testClientIp()
     const signUp = await app.request('http://localhost:8080/api/auth/sign-up/email', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Origin: authConfig.webAppURL,
+        'x-real-ip': clientIp,
       },
       body: JSON.stringify({
         name: 'MailFlow QA Auth',
@@ -126,6 +129,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       headers: {
         'Content-Type': 'application/json',
         Origin: authConfig.webAppURL,
+        'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, password: 'safe-test-password-123' }),
     })
@@ -137,6 +141,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       headers: {
         'Content-Type': 'application/json',
         Origin: authConfig.webAppURL,
+        'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, otp: verificationOtp.otp }),
     })
@@ -154,6 +159,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       headers: {
         'Content-Type': 'application/json',
         Origin: authConfig.webAppURL,
+        'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, password: 'safe-test-password-123' }),
     })

@@ -9,6 +9,7 @@ export function createWorkspaceSelectionRoutes({
   selection,
   consumeBudget,
   allowedOrigins,
+  isAllowedOrigin = (origin) => allowedOrigins.includes(origin),
 }: WorkspaceSelectionDependencies) {
   const app = new OpenAPIHono<WorkspaceRouteEnvironment>({
     defaultHook: (result, context) => {
@@ -23,7 +24,7 @@ export function createWorkspaceSelectionRoutes({
   })
   app.use('/api/v1/workspace-selection', async (context, next) => {
     context.header('Cache-Control', 'private, no-store')
-    if (!allowedOrigins.includes(context.req.header('Origin') ?? ''))
+    if (!isAllowedOrigin(context.req.header('Origin') ?? ''))
       return problemDetailsResponse(context, {
         title: 'Forbidden',
         status: 403,

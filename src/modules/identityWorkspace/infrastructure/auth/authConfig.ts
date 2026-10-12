@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { appEnvironmentSchema } from '#shared/config/appEnvironment'
+import type { AuthConfig } from '../types/authConfig.js'
+import { loadWorkspaceDeployment } from './workspaceDeployment.js'
+
+export type { AuthConfig } from '../types/authConfig.js'
 
 const origin = z.url({ protocol: /^https?$/ }).refine((value) => {
   const url = new URL(value)
@@ -35,23 +39,24 @@ const authEnvironment = z
     'Authentication URLs must use HTTPS in staging and production',
   )
 
-export function loadAuthConfig(environment: Record<string, string | undefined>) {
+export function loadAuthConfig(environment: Record<string, string | undefined>): AuthConfig {
   const parsed = authEnvironment.parse(environment)
   const siteURL = new URL(parsed.SITE_URL).origin
   const webAppURL = new URL(parsed.WEB_APP_URL).origin
+  const baseURL = new URL(parsed.BETTER_AUTH_URL).origin
+  const workspaceDeployment = loadWorkspaceDeployment(environment, { baseURL, siteURL, webAppURL })
 
   return {
     secret: parsed.BETTER_AUTH_SECRET,
-    baseURL: new URL(parsed.BETTER_AUTH_URL).origin,
+    baseURL,
     siteURL,
     webAppURL,
     allowedOrigins: [...new Set([siteURL, webAppURL])],
     appEnv: parsed.APP_ENV,
+    ...(workspaceDeployment ? { workspaceDeployment } : {}),
     resend: {
       apiKey: parsed.RESEND_API_KEY,
       from: parsed.RESEND_FROM_EMAIL,
     },
   }
 }
-
-export type AuthConfig = ReturnType<typeof loadAuthConfig>
