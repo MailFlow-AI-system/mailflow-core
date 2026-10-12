@@ -2,23 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { createApp } from '../../src/app.js'
-import {
-  assertWorkspaceDatabaseRole,
-  assertWorkspaceSelectionDatabaseRole,
-  createAuth,
-  createDiscoveryBudget,
-  createWorkspaceEntryReader,
-  createWorkspaceReader,
-  createWorkspaceSelection,
-} from '../../src/modules/identityWorkspace/index.js'
+import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
 import { testClientIp } from '../../src/modules/identityWorkspace/onboarding/utils/testClientIp.test-support.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
 import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/workspaces/types.js'
 import { createTelemetryFixture } from './telemetryFixture.js'
 
 const fixture = await createWorkspaceTestFixture()
-await assertWorkspaceDatabaseRole(fixture.pool)
-await assertWorkspaceSelectionDatabaseRole(fixture.pool)
 const port = 3003
 const host = `${fixture.acmeSlug}.workspace.test`
 const targetHost = `${fixture.northwindSlug}.workspace.test`
@@ -34,15 +24,26 @@ const authConfig = {
     `http://workspace.test:${port}`,
   ],
 }
-const auth = createAuth(drizzle(fixture.pool), authConfig, async () => {}, undefined, {
-  localWorkspaceCookie: true,
+const runtime = await createIdentityWorkspaceRuntime({
+  pool: fixture.pool,
+  database: drizzle(fixture.pool),
+  authConfig,
+  sendAccountEmail: async () => {},
+  environment: {
+    APP_ENV: 'development',
+    WORKSPACE_READ_ENABLED: 'true',
+    WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
+  },
 })
+const auth = runtime.auth
 let clientIp = testClientIp()
-const selection = createWorkspaceSelection(fixture.pool)
-const entryReader = createWorkspaceEntryReader(fixture.pool)
+const selection = runtime.workspaceSelection?.selection
+const entryReader = runtime.workspaceEntry?.reader
+if (!selection || !entryReader || !runtime.workspaces)
+  throw new Error('Workspace fixture capabilities are required')
 let failNextEntry = false
 const emptyEmail = `empty-${randomUUID()}@mailflow.invalid`
-const emptyUser = await auth.api.signUpEmail({
+const emptyUser = await fixture.auth.api.signUpEmail({
   body: { name: 'No Workspace', email: emptyEmail, password: fixture.password },
 })
 await fixture.admin.query('update identity_workspace."user" set email_verified=true where id=$1', [
@@ -53,7 +54,7 @@ let failNext = false
 let revokeAfterSelection = false
 let globalMailCalls = 0
 let failNextBudget = false
-const budget = createDiscoveryBudget(fixture.pool)
+const budget = runtime.workspaces.consumeBudget
 const consumeBudget: DiscoveryBudget = async (actor) => {
   if (failNextBudget) {
     failNextBudget = false
@@ -63,6 +64,7 @@ const consumeBudget: DiscoveryBudget = async (actor) => {
 }
 const telemetry = await createTelemetryFixture()
 const app = createApp({
+  ...runtime,
   config: telemetry.config,
   logger: telemetry.logger,
   observability: telemetry.observability,
@@ -79,9 +81,8 @@ const app = createApp({
       return auth.handler(new Request(request, { headers }))
     },
   },
-  allowedAuthOrigins: authConfig.allowedOrigins,
   workspaces: {
-    reader: createWorkspaceReader(fixture.pool),
+    reader: runtime.workspaces.reader,
     consumeBudget,
   },
   workspaceEntry: {

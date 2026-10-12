@@ -1,18 +1,5 @@
 import { serve } from '@hono/node-server'
-import {
-  assertWorkspaceDatabaseRole,
-  assertWorkspaceSelectionDatabaseRole,
-  createAuth,
-  createDiscoveryBudget,
-  createOnboardingBudget,
-  createOnboardingOtpHandler,
-  createOnboardingService,
-  createWorkspaceEntryReader,
-  createWorkspaceReader,
-  createWorkspaceSelection,
-  workspaceLocalSwitchingEnabled,
-  workspaceReadsEnabled,
-} from '#modules/identityWorkspace'
+import { createIdentityWorkspaceRuntime } from '#modules/identityWorkspace'
 import { createMailMessageRepository } from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
@@ -20,81 +7,25 @@ import { createLogger, shutdownLogger } from '#shared/logging/logger'
 import { startObservability } from '#shared/observability/observability'
 import { waitForShutdown } from '#shared/runtime/waitForShutdown'
 import { createApp } from '../app.js'
-import { loadAuthConfig } from '../modules/identityWorkspace/infrastructure/auth/authConfig.js'
-import { assertOnboardingDatabaseRole } from '../modules/identityWorkspace/onboarding/databaseRole.js'
-import {
-  loadWorkspaceWebBaseOrigin,
-  onboardingEnabled,
-  signupCutoverEnabled,
-} from '../modules/identityWorkspace/onboarding/runtimeConfig.js'
-import { createOnboardingCipher } from '../modules/identityWorkspace/onboarding/utils/cipher.js'
-import { createProtectedOtpStorage } from '../modules/identityWorkspace/onboarding/utils/otpStorage.js'
 
 const config = loadConfig(process.env)
-const authConfig = loadAuthConfig(process.env)
 const telemetry = await startObservability(config, 'mailflow-core-api')
 const logger = createLogger(config, telemetry.serviceName)
 const database = createDatabase(config.databaseUrl, logger)
-const enableWorkspaceReads = workspaceReadsEnabled(process.env)
-const enableWorkspaceSelection = workspaceLocalSwitchingEnabled(process.env)
-const enableOnboarding = onboardingEnabled(process.env)
-const closeLegacySignup = signupCutoverEnabled(process.env)
-const webBaseOrigin = enableOnboarding ? loadWorkspaceWebBaseOrigin(process.env) : undefined
-if (enableWorkspaceReads) await assertWorkspaceDatabaseRole(database.pool)
-if (enableWorkspaceSelection) await assertWorkspaceSelectionDatabaseRole(database.pool)
-if (enableOnboarding) await assertOnboardingDatabaseRole(database.pool)
-const auth = createAuth(
-  database.database,
-  authConfig,
-  undefined,
-  (operation) => logger.error({ operation }, 'Account email delivery failed'),
-  {
-    ...(enableOnboarding
-      ? { otpStorage: createProtectedOtpStorage(createOnboardingCipher(authConfig.secret)) }
-      : {}),
-    ...(enableWorkspaceSelection ? { localWorkspaceCookie: true } : {}),
-  },
-)
+const identityWorkspace = await createIdentityWorkspaceRuntime({
+  environment: process.env,
+  pool: database.pool,
+  database: database.database,
+  reportEmailDeliveryFailure: (operation) =>
+    logger.error({ operation }, 'Account email delivery failed'),
+})
 const app = createApp({
   config,
   logger,
   observability: telemetry,
   checkDatabase: database.check,
-  auth,
-  allowedAuthOrigins: authConfig.allowedOrigins,
+  ...identityWorkspace,
   mailRepository: createMailMessageRepository(database.database),
-  ...(enableWorkspaceSelection
-    ? {
-        workspaceSelection: {
-          selection: createWorkspaceSelection(database.pool),
-          allowedOrigins: authConfig.allowedOrigins,
-          consumeBudget: createDiscoveryBudget(database.pool),
-        },
-        workspaceEntry: {
-          reader: createWorkspaceEntryReader(database.pool),
-          consumeBudget: createDiscoveryBudget(database.pool),
-        },
-      }
-    : {}),
-  ...(webBaseOrigin
-    ? {
-        onboarding: {
-          service: createOnboardingService(database.pool, authConfig),
-          handleOtp: createOnboardingOtpHandler(database.pool, authConfig, webBaseOrigin),
-          allowedOrigin: authConfig.siteURL,
-          consumeBudget: createOnboardingBudget(database.pool, authConfig.secret),
-          closeLegacySignup,
-        },
-      }
-    : {}),
-  ...(enableWorkspaceReads
-    ? {
-        workspaces: {
-          reader: createWorkspaceReader(database.pool),
-          consumeBudget: createDiscoveryBudget(database.pool),
-        },
-      }
-    : {}),
 })
 
 const server = serve({

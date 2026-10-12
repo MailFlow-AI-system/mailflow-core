@@ -1,17 +1,21 @@
 import { serve } from '@hono/node-server'
+import { drizzle } from 'drizzle-orm/node-postgres'
 import pino from 'pino'
 import { createApp } from '../../src/app.js'
-import {
-  assertWorkspaceDatabaseRole,
-  createDiscoveryBudget,
-  createWorkspaceReader,
-} from '../../src/modules/identityWorkspace/index.js'
+import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
 import { loadConfig } from '../../src/shared/config/env.js'
 
 const fixture = await createWorkspaceTestFixture()
-await assertWorkspaceDatabaseRole(fixture.pool)
+const runtime = await createIdentityWorkspaceRuntime({
+  environment: { WORKSPACE_READ_ENABLED: 'true' },
+  pool: fixture.pool,
+  database: drizzle(fixture.pool),
+  authConfig: fixture.authConfig,
+  sendAccountEmail: async () => {},
+})
 const app = createApp({
+  ...runtime,
   config: loadConfig({
     DATABASE_URL: process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL,
     LOG_LEVEL: 'silent',
@@ -19,12 +23,6 @@ const app = createApp({
   logger: pino({ enabled: false }),
   checkDatabase: async () => {
     await fixture.pool.query('select 1')
-  },
-  auth: fixture.auth,
-  allowedAuthOrigins: fixture.authConfig.allowedOrigins,
-  workspaces: {
-    reader: createWorkspaceReader(fixture.pool),
-    consumeBudget: createDiscoveryBudget(fixture.pool),
   },
 })
 // Bound to loopback and excluded from production: synthetic fixtures only, not a product API.
