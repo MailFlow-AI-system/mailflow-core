@@ -9,12 +9,17 @@ import { ONBOARDING_OTP_PATHS } from './routeConstants.js'
 
 export function installAuthRoutes<E extends Env, S extends Schema, BasePath extends string>(
   app: Hono<E, S, BasePath>,
-  { auth, allowedOrigins, onboarding }: AuthRouteDependencies,
+  {
+    auth,
+    allowedOrigins,
+    isAllowedOrigin = (origin) => allowedOrigins.includes(origin),
+    onboarding,
+  }: AuthRouteDependencies,
 ) {
   app.use(
     '/api/*',
     cors({
-      origin: (origin) => (allowedOrigins.includes(origin) ? origin : undefined),
+      origin: (origin) => (isAllowedOrigin(origin) ? origin : undefined),
       credentials: true,
       allowHeaders: [
         'Content-Type',

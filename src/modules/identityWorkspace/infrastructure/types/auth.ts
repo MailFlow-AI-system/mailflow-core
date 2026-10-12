@@ -13,5 +13,8 @@ export type AuthService = {
 export type AuthRouteDependencies = {
   auth: AuthService
   allowedOrigins: string[]
+  isAllowedOrigin?: AuthOriginPolicy
   onboarding?: { handleOtp: (request: Request) => Promise<Response>; closeLegacySignup?: boolean }
 }
+
+import type { AuthOriginPolicy } from './authConfig.js'

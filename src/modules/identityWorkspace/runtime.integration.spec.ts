@@ -1,7 +1,12 @@
+import { OpenAPIHono } from '@hono/zod-openapi'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createIdentityWorkspaceRuntime, startIdentityWorkspaceWorker } from './index.js'
+import { loadAuthConfig } from './infrastructure/auth/authConfig.js'
+import { installAuthRoutes } from './infrastructure/auth/route.js'
+import { testClientIp } from './onboarding/utils/testClientIp.test-support.js'
 import { createWorkspaceTestFixture } from './workspaces/fixtures.test-support.js'
+import { createWorkspaceSelectionRoutes } from './workspaces/selectionRoute.js'
 
 describe('identity/workspace runtime with real PostgreSQL privileges', () => {
   let fixture: Awaited<ReturnType<typeof createWorkspaceTestFixture>>
@@ -10,6 +15,112 @@ describe('identity/workspace runtime with real PostgreSQL privileges', () => {
   })
   afterAll(async () => {
     await fixture?.close()
+  })
+
+  it('authenticates a remote HTTPS tenant, shares a secure cookie, selects and resumes with real RLS', async () => {
+    const environment = {
+      APP_ENV: 'staging',
+      WORKSPACE_READ_ENABLED: 'true',
+      WORKSPACE_SWITCHING_ENABLED: 'true',
+      WORKSPACE_WEB_BASE_ORIGIN: 'https://app.staging.example.com',
+      BETTER_AUTH_URL: 'https://api.staging.example.com',
+      WEB_APP_URL: 'https://app.staging.example.com',
+      SITE_URL: 'https://site.staging.example.com',
+      BETTER_AUTH_SECRET: fixture.authConfig.secret,
+      RESEND_API_KEY: 'no-external-delivery',
+      RESEND_FROM_EMAIL: 'noreply@mailflow.invalid',
+    }
+    const authConfig = loadAuthConfig(environment)
+    const runtime = await createIdentityWorkspaceRuntime({
+      environment,
+      authConfig,
+      pool: fixture.pool,
+      database: drizzle(fixture.pool),
+      sendAccountEmail: async () => {},
+    })
+    const origin = `https://${fixture.acmeSlug}.app.staging.example.com`
+    for (const source of [
+      undefined,
+      'https://acme.app.production.example.com',
+      `${origin}.attacker.com`,
+    ]) {
+      const rejectedLogin = await runtime.auth.handler(
+        new Request(`${authConfig.baseURL}/api/auth/sign-in/email`, {
+          method: 'POST',
+          headers: {
+            ...(source ? { Origin: source } : {}),
+            'Content-Type': 'application/json',
+            'x-real-ip': testClientIp(),
+          },
+          body: JSON.stringify({ email: fixture.email, password: fixture.password }),
+        }),
+      )
+      expect(rejectedLogin.status).toBe(403)
+      expect(rejectedLogin.headers.get('set-cookie')).toBeNull()
+    }
+    const login = await runtime.auth.handler(
+      new Request(`${authConfig.baseURL}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: {
+          Origin: origin,
+          'Content-Type': 'application/json',
+          'x-real-ip': testClientIp(),
+        },
+        body: JSON.stringify({ email: fixture.email, password: fixture.password }),
+      }),
+    )
+    expect(login.status).toBe(200)
+    const setCookies = login.headers.getSetCookie()
+    expect(setCookies.join(';')).toContain('__Secure-better-auth.session_token=')
+    expect(setCookies.join(';')).toContain('Domain=app.staging.example.com')
+    expect(setCookies.join(';')).toContain('Secure')
+    expect(setCookies.join(';')).toContain('HttpOnly')
+    expect(setCookies.join(';')).toContain('SameSite=Lax')
+    const cookie = setCookies.map((value) => value.split(';')[0]).join('; ')
+    const app = new OpenAPIHono()
+    installAuthRoutes(app, {
+      auth: runtime.auth,
+      allowedOrigins: runtime.allowedAuthOrigins,
+      ...(runtime.isAllowedAuthOrigin ? { isAllowedOrigin: runtime.isAllowedAuthOrigin } : {}),
+    })
+    if (!runtime.workspaceSelection) throw new Error('Missing remote selection')
+    app.route('/', createWorkspaceSelectionRoutes(runtime.workspaceSelection))
+    const select = (source: string, workspaceId: string) =>
+      app.request(
+        new Request(`${authConfig.baseURL}/api/v1/workspace-selection`, {
+          method: 'POST',
+          headers: {
+            Origin: source,
+            Cookie: cookie,
+            'Content-Type': 'application/json',
+            'X-Workspace-Identity': fixture.userId,
+          },
+          body: JSON.stringify({ workspaceId }),
+        }),
+      )
+    const selected = await select(origin, fixture.northwind)
+    expect(selected.status).toBe(200)
+    expect(selected.headers.get('access-control-allow-origin')).toBe(origin)
+    expect(selected.headers.get('access-control-allow-credentials')).toBe('true')
+    expect(await runtime.workspaceEntry?.reader.resolve(fixture.userId)).toMatchObject({
+      source: 'preference',
+      workspace: { id: fixture.northwind },
+    })
+    expect((await select(origin, fixture.globex)).status).toBe(404)
+    expect((await select('https://acme.app.production.example.com', fixture.acme)).status).toBe(403)
+    expect((await select(`${origin}.attacker.com`, fixture.acme)).status).toBe(403)
+    const logout = await runtime.auth.handler(
+      new Request(`${authConfig.baseURL}/api/auth/sign-out`, {
+        method: 'POST',
+        headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' },
+        body: '{}',
+      }),
+    )
+    expect(logout.status).toBe(200)
+    expect(logout.headers.getSetCookie().join(';')).toContain('Domain=app.staging.example.com')
+    expect(
+      await runtime.auth.api.getSession({ headers: new Headers({ Cookie: cookie }) }),
+    ).toBeNull()
   })
 
   it('composes shared-cookie auth and authorized workspace capabilities through the public interface', async () => {
