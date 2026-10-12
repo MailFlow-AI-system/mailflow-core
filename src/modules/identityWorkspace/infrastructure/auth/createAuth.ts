@@ -19,6 +19,7 @@ import type {
   VerifiedAccountUser,
 } from '../types/authOptions.js'
 import type { AuthConfig } from './authConfig.js'
+import { createAuthOriginPolicy, trustedAuthOrigins } from './authOriginPolicy.js'
 import { localWorkspaceCookie } from './localWorkspaceCookie.js'
 
 const authSchema = {
@@ -61,6 +62,7 @@ export function createAuthOptions(
   provisioning: AuthProvisioningOptions = {},
 ) {
   const failedPasswordResetRequests = new WeakMap<Request, string>()
+  const isAllowedOrigin = createAuthOriginPolicy(config)
 
   return {
     disabledPaths: [
@@ -71,7 +73,9 @@ export function createAuthOptions(
     ],
     secret: config.secret,
     baseURL: config.baseURL,
-    trustedOrigins: config.allowedOrigins,
+    trustedOrigins: config.workspaceDeployment
+      ? (request?: Request) => trustedAuthOrigins(config, request)
+      : config.allowedOrigins,
     rateLimit: {
       enabled: true,
       storage: 'database' as const,
@@ -80,6 +84,18 @@ export function createAuthOptions(
       },
     },
     advanced: {
+      ...(config.workspaceDeployment
+        ? {
+            useSecureCookies: true,
+            crossSubDomainCookies: { enabled: true, domain: config.workspaceDeployment.baseHost },
+            defaultCookieAttributes: {
+              httpOnly: true,
+              secure: true,
+              sameSite: 'lax' as const,
+              path: '/',
+            },
+          }
+        : {}),
       ...(provisioning.localWorkspaceCookie
         ? { crossSubDomainCookies: localWorkspaceCookie(config, true) }
         : {}),
@@ -158,6 +174,18 @@ export function createAuthOptions(
     ],
     hooks: {
       before: createAuthMiddleware(async (context) => {
+        const request = context.request
+        if (
+          config.workspaceDeployment &&
+          request &&
+          !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+          !isAllowedOrigin(request.headers.get('origin') ?? '')
+        ) {
+          throw APIError.from('FORBIDDEN', {
+            code: 'AUTH_ORIGIN_DENIED',
+            message: 'Untrusted authentication origin.',
+          })
+        }
         if (context.path === '/request-password-reset') {
           const email = context.body?.email
           if (typeof email !== 'string') return
