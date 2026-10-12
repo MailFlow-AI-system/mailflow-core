@@ -2,7 +2,50 @@ import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { expect, it, vi } from 'vitest'
 import { installAuthRoutes } from '../infrastructure/auth/route.js'
+import { SignupConflict } from './errors.js'
 import { createOnboardingRoutes } from './route.js'
+
+it('translates domain conflicts without interpreting database adapter errors', async () => {
+  const signup = vi.fn().mockRejectedValueOnce(new SignupConflict())
+  const app = createOnboardingRoutes({
+    service: { signup },
+    allowedOrigin: 'https://site.example.test',
+    consumeBudget: async () => 0,
+    handleOtp: async () => Response.json({}),
+  })
+  const errors = vi.fn()
+  app.onError((error, context) => {
+    errors(error)
+    return context.json({ code: 'internal_error' }, 500)
+  })
+  const request = {
+    method: 'POST',
+    headers: {
+      Origin: 'https://site.example.test',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': randomUUID(),
+    },
+    body: JSON.stringify({
+      name: 'Maya',
+      email: 'maya@example.test',
+      password: 'synthetic-password',
+      workspaceName: 'Maya',
+      workspaceSlug: 'maya',
+    }),
+  }
+  const conflict = await app.request('/api/v1/onboarding/signup', request)
+  expect(conflict.status).toBe(409)
+  expect(await conflict.json()).toMatchObject({ code: 'signup_unavailable' })
+  const operational = Object.assign(new Error('private adapter details'), {
+    code: '23505',
+    constraint: 'user_pkey',
+  })
+  signup.mockRejectedValueOnce(operational)
+  const failure = await app.request('/api/v1/onboarding/signup', request)
+  expect(failure.status).toBe(500)
+  expect(errors).toHaveBeenCalledWith(operational)
+  expect(await failure.text()).not.toContain('private')
+})
 
 it('opens only the exact signup exception and leaves other v1 resources authenticated', async () => {
   const app = new Hono()
