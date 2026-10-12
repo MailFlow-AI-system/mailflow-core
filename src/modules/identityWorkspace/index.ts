@@ -6,6 +6,13 @@ export { createOnboardingBudget } from './onboarding/requestBudget.js'
 export { createOnboardingRoutes } from './onboarding/route.js'
 export { createOnboardingService } from './onboarding/service.js'
 export type { OnboardingRouteDependencies } from './onboarding/types.js'
+export { createIdentityWorkspaceRuntime } from './runtime.js'
+export type {
+  IdentityWorkspaceRuntime,
+  IdentityWorkspaceRuntimeDependencies,
+  IdentityWorkspaceWorkerDependencies,
+} from './runtimeTypes.js'
+export { startIdentityWorkspaceWorker } from './workerRuntime.js'
 export { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 export { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
 export { createWorkspaceEntryRoutes } from './workspaces/entryRoute.js'
