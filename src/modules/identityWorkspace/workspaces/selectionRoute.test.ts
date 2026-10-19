@@ -42,6 +42,42 @@ function request(body: unknown = { workspaceId: 'target' }, requestOrigin = orig
   })
 }
 describe('workspace selection HTTP contract', () => {
+  it('allows workspace identity preflights and exposes identity and retry headers', async () => {
+    const { app, consumeBudget } = fixture()
+    const preflight = await app.request('/api/v1/workspace-selection', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-workspace-identity',
+      },
+    })
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.get('access-control-allow-origin')).toBe(origin)
+    const allowedHeaders = preflight.headers.get('access-control-allow-headers')?.toLowerCase()
+    expect(allowedHeaders).toContain('content-type')
+    expect(allowedHeaders).toContain('x-workspace-identity')
+
+    const rejectedPreflight = await app.request('/api/v1/workspace-selection', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'http://untrusted.example',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-workspace-identity',
+      },
+    })
+    expect(rejectedPreflight.headers.get('access-control-allow-origin')).toBeNull()
+
+    consumeBudget.mockResolvedValueOnce(24)
+    const limited = await app.request(request())
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('x-workspace-identity')).toBe('actor')
+    expect(limited.headers.get('retry-after')).toBe('24')
+    const exposedHeaders = limited.headers.get('access-control-expose-headers')?.toLowerCase()
+    expect(exposedHeaders).toContain('x-workspace-identity')
+    expect(exposedHeaders).toContain('retry-after')
+  })
+
   it('does not change preferences when the budget infrastructure fails', async () => {
     const { app, select, consumeBudget } = fixture()
     consumeBudget.mockRejectedValueOnce(new Error('synthetic database outage'))
