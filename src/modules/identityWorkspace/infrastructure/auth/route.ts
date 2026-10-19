@@ -23,11 +23,13 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
       credentials: true,
       allowHeaders: [
         'Content-Type',
+        'X-Workspace-Identity',
         'traceparent',
         'tracestate',
         ...(onboarding ? ['Idempotency-Key'] : []),
       ],
       allowMethods: ['GET', 'POST', 'OPTIONS'],
+      exposeHeaders: ['X-Workspace-Identity', 'Retry-After'],
     }),
   )
 
