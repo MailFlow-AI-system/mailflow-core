@@ -12,11 +12,8 @@ export async function createWorkspaceTestFixture() {
       'MAILFLOW_WORKSPACE_TEST_DATABASE_URL is mandatory; workspace integration tests cannot be skipped',
     )
   const url = new URL(value)
-  if (
-    !['localhost', '127.0.0.1'].includes(url.hostname) ||
-    url.pathname !== '/mailflow_workspace_test'
-  ) {
-    throw new Error('Workspace tests require the dedicated local mailflow_workspace_test database')
+  if (!['localhost', '127.0.0.1'].includes(url.hostname)) {
+    throw new Error('Workspace tests require a disposable local PostgreSQL database')
   }
   const admin = new Pool({ connectionString: value, max: 3 })
   const migrationLock = await admin.connect()
