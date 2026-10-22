@@ -4,17 +4,11 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Pool } from 'pg'
 import { loadAuthConfig } from '../infrastructure/auth/authConfig.js'
 import { createAuth } from '../infrastructure/auth/createAuth.js'
+import { workspaceTestDatabaseUrl } from './testDatabase.test-support.js'
 
 export async function createWorkspaceTestFixture() {
-  const value = process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL
-  if (!value)
-    throw new Error(
-      'MAILFLOW_WORKSPACE_TEST_DATABASE_URL is mandatory; workspace integration tests cannot be skipped',
-    )
+  const value = workspaceTestDatabaseUrl()
   const url = new URL(value)
-  if (!['localhost', '127.0.0.1'].includes(url.hostname)) {
-    throw new Error('Workspace tests require a disposable local PostgreSQL database')
-  }
   const admin = new Pool({ connectionString: value, max: 3 })
   const migrationLock = await admin.connect()
   try {
