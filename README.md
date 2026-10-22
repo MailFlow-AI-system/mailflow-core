@@ -59,13 +59,17 @@ Authentication uses `/api/auth`; routes under `/api/v1` require a session.
 `GET /api/v1/mail/messages` provides paginated search. Inbox messages are currently
 shared by all authenticated users. Errors use Problem Details.
 
-`bun run test` needs no database by default. Integration tests opt in through:
+`bun run test` requires `MAILFLOW_WORKSPACE_TEST_DATABASE_URL`, a local PostgreSQL URL
+such as `postgresql://mailflow:mailflow@localhost:5432/mailflow` from `bun run db:up`.
+Workspace suites apply Identity migrations and create the restricted
+`workspace_test_app` role, so RLS is tested without `SUPERUSER` or `BYPASSRLS`.
+Other integration tests opt in through:
 
 - `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL`
 - `MAILFLOW_MAIL_INTEGRATION_DATABASE_URL`
 - `MAILFLOW_MIGRATIONS_TEST_DATABASE_URL`
 
-Use dedicated test databases. Auth and Inbox require applied migrations; the migration
+Use disposable test databases. Auth and Inbox require applied migrations; the migration
 suite requires a disposable instance with permissions to create/drop databases and
 create event triggers. CI also runs `bash scripts/smokeImage.sh` against the final image.
 
