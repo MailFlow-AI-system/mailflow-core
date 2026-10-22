@@ -4,6 +4,7 @@ import pino from 'pino'
 import { createApp } from '../../src/app.js'
 import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
+import { workspaceTestDatabaseUrl } from '../../src/modules/identityWorkspace/workspaces/testDatabase.test-support.js'
 import { loadConfig } from '../../src/shared/config/env.js'
 
 const fixture = await createWorkspaceTestFixture()
@@ -17,7 +18,7 @@ const runtime = await createIdentityWorkspaceRuntime({
 const app = createApp({
   ...runtime,
   config: loadConfig({
-    DATABASE_URL: process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL,
+    DATABASE_URL: workspaceTestDatabaseUrl(),
     LOG_LEVEL: 'silent',
   }),
   logger: pino({ enabled: false }),
