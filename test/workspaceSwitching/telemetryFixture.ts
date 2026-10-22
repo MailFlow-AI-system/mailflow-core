@@ -1,6 +1,7 @@
 import { Writable } from 'node:stream'
 import pino from 'pino'
 import { z } from 'zod'
+import { workspaceTestDatabaseUrl } from '../../src/modules/identityWorkspace/workspaces/testDatabase.test-support.js'
 import { loadConfig } from '../../src/shared/config/env.js'
 import { startObservability } from '../../src/shared/observability/observability.js'
 import type { WorkspaceTelemetryRecord } from './telemetryTypes.js'
@@ -24,7 +25,7 @@ const recordSchema = z.object({
 export async function createTelemetryFixture() {
   const enabled = process.env.MAILFLOW_WORKSPACE_TELEMETRY_LOCAL === 'true'
   const config = loadConfig({
-    DATABASE_URL: process.env.MAILFLOW_WORKSPACE_TEST_DATABASE_URL,
+    DATABASE_URL: workspaceTestDatabaseUrl(),
     LOG_LEVEL: enabled ? 'info' : 'silent',
     ...(enabled
       ? {
