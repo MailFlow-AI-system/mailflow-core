@@ -77,14 +77,18 @@ jobs:
           MAILFLOW_MIGRATIONS_TEST_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: bun run test src/shared/database/migrations.integration.test.ts
 
-      - name: Test Auth and Inbox on the migrated disposable database
+      - name: Test Auth and Mail on the migrated disposable database
         env:
           DIRECT_URL: ${{ env.TEST_DATABASE_URL }}
           MAILFLOW_AUTH_INTEGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
           MAILFLOW_MAIL_INTEGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: |
           bunx tsx src/entrypoints/migrate.ts
-          bun run test src/modules/identityWorkspace/infrastructure/auth/auth.integration.test.ts src/modules/mail/inbox/listMessages/listMessages.integration.test.ts
+          bun run test \
+            src/modules/identityWorkspace/infrastructure/auth/auth.integration.test.ts \
+            src/modules/mail/inbox/listMessages/listMessages.integration.test.ts \
+            src/modules/mail/outgoing/outgoingRepository.integration.test.ts \
+            src/modules/mail/attachments/attachmentRepository.integration.test.ts
 
       - name: Validate Collector image and configuration
         run: bun run observability:collector:validate

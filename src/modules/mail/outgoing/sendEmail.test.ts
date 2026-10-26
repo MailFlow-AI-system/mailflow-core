@@ -110,3 +110,53 @@ it('rejects a changed recipient name when reusing the same delivery id', async (
   ).rejects.toThrow('different message')
   expect(deliver).toHaveBeenCalledTimes(1)
 })
+
+it('reserves references before resolving bytes, uses resolved files only at delivery, and skips reads on confirmed retry', async () => {
+  const { repository, deliver, record } = setup()
+  const references = [{ id: '00000000-0000-4000-8000-000000000002', contentId: 'image-1' }]
+  const binaries = [
+    { filename: 'image.png', content: 'aGVsbG8=', contentId: 'image-1', contentType: 'image/png' },
+  ]
+  const resolveAttachments = vi.fn(async () => binaries)
+  await sendEmail({ repository, deliver, resolveAttachments }, 'user', {
+    ...input,
+    attachments: references,
+  })
+  expect(repository.reserve).toHaveBeenCalledWith(
+    expect.objectContaining({ attachments: references }),
+  )
+  expect(resolveAttachments).toHaveBeenCalledWith('user', references)
+  expect(vi.mocked(repository.reserve).mock.invocationCallOrder[0]).toBeLessThan(
+    resolveAttachments.mock.invocationCallOrder[0] ?? 0,
+  )
+  expect(deliver).toHaveBeenCalledWith({ ...input, attachments: binaries }, `mail/user/${input.id}`)
+  record.providerId = 'provider-id'
+  await sendEmail({ repository, deliver, resolveAttachments }, 'user', {
+    ...input,
+    attachments: references,
+  })
+  expect(resolveAttachments).toHaveBeenCalledTimes(1)
+  expect(deliver).toHaveBeenCalledTimes(1)
+})
+
+it('does not contact the provider when storage resolution fails', async () => {
+  const { repository, deliver } = setup()
+  await expect(
+    sendEmail(
+      {
+        repository,
+        deliver,
+        resolveAttachments: async () => {
+          throw new Error('unverified')
+        },
+      },
+      'user',
+      {
+        ...input,
+        attachments: [{ id: '00000000-0000-4000-8000-000000000002' }],
+      },
+    ),
+  ).rejects.toThrow('unverified')
+  expect(deliver).not.toHaveBeenCalled()
+  expect(repository.markSent).not.toHaveBeenCalled()
+})

@@ -11,7 +11,12 @@ import {
   createWorkspaceSelectionRoutes,
   installAuthRoutes,
 } from '#modules/identityWorkspace'
-import { blockGlobalWorkspaceMail, createMailModule, createOutgoingMailModule } from '#modules/mail'
+import {
+  blockGlobalWorkspaceMail,
+  createAttachmentModule,
+  createMailModule,
+  createOutgoingMailModule,
+} from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
@@ -27,6 +32,7 @@ export function createApp({
   isAllowedAuthOrigin,
   mailRepository,
   outgoingMail,
+  attachments,
   workspaces,
   onboarding,
   workspaceSelection,
@@ -46,6 +52,14 @@ export function createApp({
   app.route('/', createHealthModule({ checkDatabase }))
   if (workspaces || onboarding || workspaceSelection || workspaceEntry)
     app.use('/api/v1/mail/*', blockGlobalWorkspaceMail)
+  if (attachments)
+    app.route(
+      '/',
+      createAttachmentModule(
+        attachments,
+        isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
+      ),
+    )
   if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
   if (outgoingMail)
     app.route(
