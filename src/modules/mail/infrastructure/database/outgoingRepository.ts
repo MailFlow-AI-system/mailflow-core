@@ -98,8 +98,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
         await transaction.insert(outgoingEmailAttachments).values(
           references.map((reference, position) => {
             const row = byId.get(reference.id)
-            if (!row?.finalKey || !row.scanVersion || !row.scannedAt)
-              throw new Error('Attachment unavailable')
+            if (!row?.finalKey) throw new Error('Attachment unavailable')
             return {
               userId,
               messageId: id,

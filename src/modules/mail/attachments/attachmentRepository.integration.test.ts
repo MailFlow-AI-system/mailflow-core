@@ -31,9 +31,7 @@ integration('attachment PostgreSQL persistence', () => {
     status: 'pending',
     temporaryKey: `pending/${randomUUID()}`,
     finalKey: null,
-    scanVersion: null,
     rejectionReason: null,
-    scannedAt: null,
     expiresAt: new Date(Date.now() + 86_400_000),
     claimToken: null,
     claimExpiresAt: null,
@@ -71,9 +69,7 @@ integration('attachment PostgreSQL persistence', () => {
       await repository.finishCompletion(row.userId, row.id, 'wrong', {
         status: 'clean',
         finalKey: finalKey('wrong'),
-        scanVersion: 'test',
         rejectionReason: null,
-        scannedAt: new Date(),
       }),
     ).toBeNull()
   })
@@ -89,9 +85,7 @@ integration('attachment PostgreSQL persistence', () => {
       await repository.finishCompletion(row.userId, row.id, 'first', {
         status: 'clean',
         finalKey: finalKey('stale'),
-        scanVersion: 'test',
         rejectionReason: null,
-        scannedAt: new Date(),
       }),
     ).toBeNull()
     expect(await repository.claimCompletion(row.userId, row.id, 'second')).toBeTruthy()
@@ -99,18 +93,14 @@ integration('attachment PostgreSQL persistence', () => {
       await repository.finishCompletion(row.userId, row.id, 'first', {
         status: 'error',
         finalKey: null,
-        scanVersion: null,
         rejectionReason: null,
-        scannedAt: null,
       }),
     ).toBeNull()
     expect(
       await repository.finishCompletion(row.userId, row.id, 'second', {
         status: 'clean',
         finalKey: finalKey('clean'),
-        scanVersion: 'test',
         rejectionReason: null,
-        scannedAt: new Date(),
       }),
     ).toMatchObject({ status: 'clean', finalKey: finalKey('clean'), claimToken: null })
     expect(await repository.claimCompletion(row.userId, row.id, 'third')).toBeNull()
@@ -123,7 +113,7 @@ integration('attachment PostgreSQL persistence', () => {
     const claimed = await repository.claimExpired(100, 'cleanup')
     expect(claimed).toContainEqual(expect.objectContaining({ id: row.id, status: 'deleting' }))
     expect(await repository.get(row.userId, row.id)).toBeNull()
-    expect(await repository.claimCompletion(row.userId, row.id, 'scan')).toBeNull()
+    expect(await repository.claimCompletion(row.userId, row.id, 'verify')).toBeNull()
     expect(await repository.deleteClaimed(row.userId, row.id, 'wrong')).toBe(false)
     expect(await repository.deleteClaimed(row.userId, row.id, 'cleanup')).toBe(true)
   })
@@ -133,8 +123,6 @@ integration('attachment PostgreSQL persistence', () => {
       record({
         status: 'clean',
         finalKey: finalKey('snapshot-race'),
-        scanVersion: 'test',
-        scannedAt: new Date(),
         expiresAt: new Date(Date.now() - 1_000),
       }),
     )
@@ -208,9 +196,7 @@ integration('attachment PostgreSQL persistence', () => {
       record({
         status: 'clean',
         finalKey: finalKey('bound'),
-        scanVersion: 'test',
         rejectionReason: null,
-        scannedAt: new Date(),
       }),
     )
     expect(await repository.isAssociated(row.userId, row.id)).toBe(false)
@@ -255,18 +241,14 @@ integration('attachment PostgreSQL persistence', () => {
           userId: foreignOwner,
           status: 'clean',
           finalKey: finalKey('other'),
-          scanVersion: 'test',
           rejectionReason: null,
-          scannedAt: new Date(),
         }),
       ),
       await repository.create(
         record({
           status: 'clean',
           finalKey: finalKey('expired'),
-          scanVersion: 'test',
           rejectionReason: null,
-          scannedAt: new Date(),
           expiresAt: new Date(Date.now() - 1_000),
         }),
       ),
@@ -274,9 +256,7 @@ integration('attachment PostgreSQL persistence', () => {
         record({
           status: 'clean',
           finalKey: finalKey('duplicate'),
-          scanVersion: 'test',
           rejectionReason: null,
-          scannedAt: new Date(),
         }),
       ),
     ]
@@ -324,8 +304,6 @@ integration('attachment PostgreSQL persistence', () => {
       record({
         status: 'clean',
         finalKey: finalKey('concurrent'),
-        scanVersion: 'test',
-        scannedAt: new Date(),
       }),
     )
     const input = {

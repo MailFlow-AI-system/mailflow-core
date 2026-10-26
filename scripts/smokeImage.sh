@@ -159,8 +159,6 @@ fi
   --env R2_ACCESS_KEY_ID=smoke \
   --env R2_SECRET_ACCESS_KEY=smoke \
   --env R2_ENDPOINT=http://127.0.0.1:1 \
-  --env CLAMAV_HOST=127.0.0.1 \
-  --env CLAMAV_PORT=3310 \
   --env HOST=0.0.0.0 \
   --env PORT="${api_container_port}" \
   --env LOG_LEVEL=info \

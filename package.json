@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "dev": "infisical run --env=dev --path=/mailflow-core -- env CLAMAV_HOST=127.0.0.1 tsx watch --conditions=development src/entrypoints/api.ts",
+    "dev": "infisical run --env=dev --path=/mailflow-core -- tsx watch --conditions=development src/entrypoints/api.ts",
     "dev:worker": "infisical run --env=dev --path=/mailflow-core -- tsx watch --conditions=development src/entrypoints/worker.ts",
     "db:up": "docker compose up -d --wait database",
     "db:down": "docker compose down",

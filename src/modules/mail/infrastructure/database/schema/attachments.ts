@@ -27,9 +27,7 @@ export const attachments = mailSchema.table(
     status: text('status').$type<AttachmentStatus>().notNull(),
     temporaryKey: text('temporary_key').notNull(),
     finalKey: text('final_key'),
-    scanVersion: text('scan_version'),
     rejectionReason: text('rejection_reason'),
-    scannedAt: timestamp('scanned_at', { withTimezone: true, precision: 3 }),
     createdAt: timestamp('created_at', { withTimezone: true, precision: 3 }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true, precision: 3 })
       .default(sql`now() + interval '24 hours'`)
@@ -50,7 +48,7 @@ export const attachments = mailSchema.table(
     ),
     check(
       'attachment_clean_check',
-      sql`${table.status} <> 'clean' or (${table.finalKey} is not null and ${table.scanVersion} is not null and ${table.scannedAt} is not null)`,
+      sql`${table.status} <> 'clean' or ${table.finalKey} is not null`,
     ),
   ],
 )

@@ -46,41 +46,51 @@ function setup() {
     delete: vi.fn(async () => {}),
     presignGet: vi.fn(async () => 'https://storage.test/download'),
   }
-  const scanner = { scan: vi.fn(async () => ({ result: 'clean' as const, version: 'test' })) }
   return {
     repository,
     storage,
-    scanner,
-    service: createAttachmentService({ repository, storage, scanner }),
+    service: createAttachmentService({ repository, storage }),
   }
 }
 describe('attachment service', () => {
-  it('uses a separate final object and scans verified bytes before availability', async () => {
-    const { service, storage, scanner } = setup()
+  it('completes immutable content verification without a scanner dependency', async () => {
+    const { repository, storage } = setup()
+    const service = createAttachmentService({ repository, storage })
+    const started = await service.create('owner', metadata)
+    const completed = await service.complete('owner', started.id)
+    expect(completed).toMatchObject({ status: 'clean', finalKey: expect.any(String) })
+    expect(completed).not.toHaveProperty('scanVersion')
+    expect(completed).not.toHaveProperty('scannedAt')
+    expect(storage.copy).toHaveBeenCalled()
+    expect(storage.read).toHaveBeenCalled()
+  })
+
+  it('uses a separate final object and verifies bytes before availability', async () => {
+    const { service, storage } = setup()
     const started = await service.create('owner', metadata)
     expect((await service.complete('owner', started.id)).status).toBe('clean')
     const [source, target] = storage.copy.mock.calls[0] ?? []
     expect(source).not.toBe(target)
-    expect(scanner.scan).toHaveBeenCalledWith(bytes)
+    expect(storage.read).toHaveBeenCalledWith(target, metadata.contentType)
     expect(await service.get('other', started.id)).toBeNull()
   })
-  it('rejects a checksum mismatch without scanning', async () => {
-    const { service, storage, scanner } = setup()
+  it('rejects a checksum mismatch without making the object available', async () => {
+    const { service, storage } = setup()
     const started = await service.create('owner', metadata)
     storage.read.mockResolvedValueOnce(Buffer.from('wrong'))
     expect((await service.complete('owner', started.id)).status).toBe('rejected')
-    expect(scanner.scan).not.toHaveBeenCalled()
+    expect(await service.download('owner', started.id)).toBeNull()
   })
-  it('fails closed on scanner failure and permits retry', async () => {
-    const { service, scanner } = setup()
+  it('retains a retryable state when object verification fails temporarily', async () => {
+    const { service, storage } = setup()
     const started = await service.create('owner', metadata)
-    scanner.scan.mockRejectedValueOnce(new Error('unavailable'))
+    storage.read.mockRejectedValueOnce(new Error('unavailable'))
     expect((await service.complete('owner', started.id)).status).toBe('error')
     expect((await service.complete('owner', started.id)).status).toBe('clean')
   })
 })
 
-it('does not resolve unscanned, foreign, or corrupted attachments', async () => {
+it('does not resolve unverified, foreign, or corrupted attachments', async () => {
   const { service, storage } = setup()
   const started = await service.create('owner', metadata)
   await expect(service.resolveReferences('owner', [{ id: started.id }])).rejects.toThrow()
@@ -93,12 +103,12 @@ it('does not resolve unscanned, foreign, or corrupted attachments', async () => 
   ])
 })
 
-it('rejects excessive archive expansion before scanning', async () => {
+it('rejects excessive archive expansion before making an attachment available', async () => {
   const bomb = Buffer.from(
     'UEsDBBQAAAAIAMqWWl0iBafcLwAAADB1AAAIAAAAaXRlbS5iaW7twTEBAAAAwqBs61/KEp5AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB8DFBLAQIUAxQAAAAIAMqWWl0iBafcLwAAADB1AAAIAAAAAAAAAAAAAACAAQAAAABpdGVtLmJpblBLBQYAAAAAAQABADYAAABVAAAAAAA=',
     'base64',
   )
-  const { service, storage, scanner } = setup()
+  const { service, storage } = setup()
   const started = await service.create('owner', {
     filename: 'bomb.zip',
     contentType: 'application/zip',
@@ -107,7 +117,7 @@ it('rejects excessive archive expansion before scanning', async () => {
   })
   storage.read.mockResolvedValueOnce(bomb)
   expect((await service.complete('owner', started.id)).status).toBe('rejected')
-  expect(scanner.scan).not.toHaveBeenCalled()
+  expect(await service.download('owner', started.id)).toBeNull()
 })
 
 it('deletes only its own candidate if its completion lease is lost', async () => {
@@ -131,7 +141,7 @@ it('downloads only verified clean bytes for the owner', async () => {
   await expect(service.download('owner', started.id)).rejects.toThrow()
 })
 
-it('bounds concurrent archive inspection and scanning', async () => {
+it('bounds concurrent content verification and archive inspection', async () => {
   const { service, storage } = setup()
   const started = await service.create('owner', metadata)
   let release: (() => void) | undefined
@@ -167,15 +177,17 @@ it('exposes expired status only for unassociated attachments', async () => {
   }
 })
 
-it('verifies and scans zero-byte attachments', async () => {
-  const { service, storage, scanner } = setup()
+it('verifies zero-byte attachments', async () => {
+  const { service, storage } = setup()
   const empty = Buffer.alloc(0)
   const started = await service.create('owner', {
     ...metadata,
     size: 0,
     sha256: createHash('sha256').update(empty).digest('hex'),
   })
-  storage.read.mockResolvedValueOnce(empty)
+  storage.read.mockResolvedValue(empty)
   expect((await service.complete('owner', started.id)).status).toBe('clean')
-  expect(scanner.scan).toHaveBeenCalledWith(empty)
+  expect(await service.resolveReferences('owner', [{ id: started.id }])).toEqual([
+    { filename: metadata.filename, content: '' },
+  ])
 })

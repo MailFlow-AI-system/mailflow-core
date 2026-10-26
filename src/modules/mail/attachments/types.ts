@@ -1,6 +1,7 @@
 export class AttachmentQuotaError extends Error {}
 export class AttachmentMismatchError extends Error {}
 
+/** The legacy "clean" state identifies verified immutable content. */
 export type AttachmentStatus = 'pending' | 'clean' | 'rejected' | 'error' | 'deleting'
 export type AttachmentMetadata = {
   filename: string
@@ -14,8 +15,6 @@ export type AttachmentRecord = AttachmentMetadata & {
   status: AttachmentStatus
   temporaryKey: string
   finalKey: string | null
-  scanVersion: string | null
-  scannedAt: Date | null
   rejectionReason: string | null
   expiresAt: Date
   claimToken: string | null
@@ -37,10 +36,7 @@ export type AttachmentRepository = {
     userId: string,
     id: string,
     token: string,
-    patch: Pick<
-      AttachmentRecord,
-      'status' | 'finalKey' | 'scanVersion' | 'scannedAt' | 'rejectionReason'
-    >,
+    patch: Pick<AttachmentRecord, 'status' | 'finalKey' | 'rejectionReason'>,
   ) => Promise<AttachmentRecord | null>
 }
 export type ObjectStorage = {
@@ -57,7 +53,4 @@ export type ObjectStorage = {
   ) => Promise<void>
   read: (key: string, expectedContentType?: string) => Promise<Buffer>
   delete: (key: string) => Promise<void>
-}
-export type AttachmentScanner = {
-  scan: (bytes: Buffer) => Promise<{ result: 'clean' | 'infected'; version: string }>
 }
