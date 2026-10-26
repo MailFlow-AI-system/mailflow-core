@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { sendEmailSchema } from './contract.js'
 import { sendEmail } from './sendEmail.js'
 import type { OutgoingMail, OutgoingRepository } from './types.js'
 
@@ -87,4 +88,25 @@ describe('sendEmail', () => {
     await sendEmail({ repository, deliver }, 'user', input)
     expect(deliver.mock.calls[0]?.[1]).toBe(deliver.mock.calls[1]?.[1])
   })
+})
+
+it('preserves legacy retry hashes when the optional recipient name is blank', async () => {
+  const { repository, deliver, record } = setup()
+  await sendEmail({ repository, deliver }, 'user', input)
+  record.providerId = 'provider-id'
+  await sendEmail(
+    { repository, deliver },
+    'user',
+    sendEmailSchema.parse({ ...input, recipientName: '  ' }),
+  )
+  expect(deliver).toHaveBeenCalledTimes(1)
+})
+
+it('rejects a changed recipient name when reusing the same delivery id', async () => {
+  const { repository, deliver } = setup()
+  await sendEmail({ repository, deliver }, 'user', { ...input, recipientName: 'Ada' })
+  await expect(
+    sendEmail({ repository, deliver }, 'user', { ...input, recipientName: 'Grace' }),
+  ).rejects.toThrow('different message')
+  expect(deliver).toHaveBeenCalledTimes(1)
 })

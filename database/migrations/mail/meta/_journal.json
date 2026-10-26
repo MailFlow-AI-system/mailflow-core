@@ -15,6 +15,13 @@
       "when": 1793016657678,
       "tag": "0001_add_outgoing_email",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793023574403,
+      "tag": "0002_add_outgoing_recipient_name",
+      "breakpoints": true
     }
   ]
 }

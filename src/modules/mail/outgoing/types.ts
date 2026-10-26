@@ -11,6 +11,7 @@ export type SentEmail = {
   to: string[]
   cc: string[]
   bcc: string[]
+  recipientName: string
   subject: string
   text: string
   sentAt: Date | null
