@@ -1,20 +1,25 @@
 import type { AuthConfig, AuthOriginPolicy } from '../types/authConfig.js'
 
+const loopbackHosts = ['localhost', '127.0.0.1', '[::1]']
+const developmentOrigins = loopbackHosts.flatMap((host) =>
+  ['http', 'https'].flatMap((protocol) => [`${protocol}://${host}`, `${protocol}://${host}:*`]),
+)
+
 export function createAuthOriginPolicy(config: AuthConfig): AuthOriginPolicy {
   return (origin) => {
     if (config.allowedOrigins.includes(origin)) return true
-    const deployment = config.workspaceDeployment
-    if (!deployment) return false
     try {
       const url = new URL(origin)
       if (
         url.origin !== origin ||
-        url.protocol !== 'https:' ||
-        url.port ||
+        !['http:', 'https:'].includes(url.protocol) ||
         url.username ||
         url.password
       )
         return false
+      if (config.appEnv === 'development' && loopbackHosts.includes(url.hostname)) return true
+      const deployment = config.workspaceDeployment
+      if (!deployment || url.protocol !== 'https:' || url.port) return false
       if (url.hostname === deployment.baseHost) return true
       const suffix = `.${deployment.baseHost}`
       if (!url.hostname.endsWith(suffix)) return false
@@ -27,8 +32,11 @@ export function createAuthOriginPolicy(config: AuthConfig): AuthOriginPolicy {
 }
 
 export function trustedAuthOrigins(config: AuthConfig, request?: Request) {
+  const origins = [
+    ...config.allowedOrigins,
+    ...(config.appEnv === 'development' ? developmentOrigins : []),
+  ]
   const origin = request?.headers.get('origin')
-  if (origin && createAuthOriginPolicy(config)(origin))
-    return [...new Set([...config.allowedOrigins, origin])]
-  return config.allowedOrigins
+  if (origin && createAuthOriginPolicy(config)(origin)) return [...new Set([...origins, origin])]
+  return origins
 }
