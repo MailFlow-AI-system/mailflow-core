@@ -126,7 +126,7 @@ result. A changed payload with the same id returns 409. Pending reservations
 older than 23 hours also return 409, preventing a duplicate after Resend's
 24-hour idempotency retention expires; inspect the provider before starting a
 new send in that case. Attachment bytes remain in private object storage, and
-sent metadata references the immutable scanned objects.
+sent metadata references the immutable verified objects.
 
 `GET /api/v1/mail/sent?offset=0` returns only the authenticated user's confirmed
 messages, in pages of twenty with `nextOffset`. Sent means provider acceptance;
@@ -151,6 +151,11 @@ than weakening its existing isolation guard. Follow-up work is tenant-scoped
 mail and provider webhook reconciliation for final delivery and old uncertain
 attempts.
 
+Attachment verification currently checks storage metadata, immutable bytes,
+SHA-256, image signatures and bounded archive structure. Antivirus scanning was
+removed from this feature scope; a corrective migration removes its unused
+metadata without rewriting the migration already applied in development.
+
 Development authentication accepts HTTP and HTTPS origins on any port for the
 exact loopback hosts `localhost`, `127.0.0.1`, and `[::1]`. The same policy covers
 credentialed CORS, Better Auth requests, and recovery callbacks (including the
@@ -163,29 +168,25 @@ that pattern can include unrelated domains such as `localhost.example.com`.
 The browser requests a short-lived upload URL through authenticated
 `POST /api/v1/mail/attachments`, uploads directly with the returned headers, and
 calls `POST /api/v1/mail/attachments/{id}/complete`. Completion copies the upload
-to an immutable private key, verifies the byte count, metadata and SHA-256, and
-scans it with ClamAV. `GET /api/v1/mail/attachments/{id}` returns its state;
-only clean attachments can be sent or downloaded. Inline image references carry
-an optional content ID and are validated against the image signature. Unscannable
-files fail closed and can be retried. Legacy requests containing Base64 attachment
-bytes are rejected. All operations remain owner-scoped; workspace mail is blocked.
+to an immutable private key and verifies the byte count, metadata and SHA-256.
+`GET /api/v1/mail/attachments/{id}` returns its state; only verified attachments
+can be sent or downloaded. The existing `clean` wire status indicates content
+verification, not an antivirus scan. Inline image references carry an optional
+content ID and are validated against the image signature. Verification failures
+retain the draft for retry. Legacy requests containing Base64 attachment bytes
+are rejected. All operations remain owner-scoped; workspace mail is blocked.
 
-Set the R2 and ClamAV variables in `.env.example` for each environment. Bucket
-CORS must permit the exact Web origin to issue PUT requests with Content-Type;
-never publish the bucket. Apply lifecycle expiration only to `pending/`, not to
-`objects/`. Scanner access must remain private and its signatures must stay fresh.
-The service rejects signatures older than 48 hours. Production must configure
-ClamAV archive and resource limits and monitor scanning failures.
-
-The default local development command uses the development R2 bucket and a
-local scanner: start `docker compose up -d clamav` before sending files. Wait for
-ClamAV to load current signatures. For offline object storage, the optional MinIO
-service in `compose.yaml` requires its own private bucket, CORS policy, local-only
-credentials, and an explicit `R2_ENDPOINT` override.
+Set the R2 variables in `.env.example` for each environment. Bucket CORS must
+permit the exact Web origin to issue PUT requests with Content-Type; never
+publish the bucket. Apply lifecycle expiration only to `pending/`, not `objects/`.
+The default local development command uses the development R2 bucket. Optional
+local MinIO requires its own private bucket, CORS policy, local-only credentials,
+and an explicit `R2_ENDPOINT` override.
 
 Versioned bucket policies and environment mapping are in `infrastructure/r2/`.
-Private Railway scanner configuration is in `infrastructure/clamav/`. Runtime
-credentials are distinct for each environment and never reach Web Workers.
+Runtime credentials are distinct for each environment and never reach Web Workers.
+Antivirus integration is deferred; no scanner process or scanner configuration
+is required to upload, send, or retrieve files.
 
 The API starts cleanup asynchronously and repeats it hourly without overlapping
 local runs. Each run handles at most ten expired-metadata batches and ten orphan

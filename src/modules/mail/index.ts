@@ -1,4 +1,3 @@
-export { createClamavScanner, loadClamavConfig } from './attachments/clamav.js'
 export { cleanupAttachments, cleanupOrphanObjects } from './attachments/cleanup.js'
 export { startAttachmentCleanupScheduler } from './attachments/cleanupScheduler.js'
 export { createObjectStorage } from './attachments/objectStorage.js'

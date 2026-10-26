@@ -29,6 +29,13 @@
       "when": 1793051619709,
       "tag": "0003_add_attachment_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793054225375,
+      "tag": "0004_remove_attachment_scanner_metadata",
+      "breakpoints": true
     }
   ]
 }
