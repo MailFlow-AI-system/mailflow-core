@@ -5,10 +5,21 @@ import { outgoingEmails } from './schema/outgoingEmails.js'
 
 export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepository {
   return {
-    reserve: async ({ userId, id, payloadHash, to, cc, bcc, subject, html, text }) => {
+    reserve: async ({
+      userId,
+      id,
+      payloadHash,
+      to,
+      cc,
+      bcc,
+      recipientName,
+      subject,
+      html,
+      text,
+    }) => {
       await database
         .insert(outgoingEmails)
-        .values({ userId, id, payloadHash, to, cc, bcc, subject, html, text })
+        .values({ userId, id, payloadHash, to, cc, bcc, recipientName, subject, html, text })
         .onConflictDoNothing()
       const [record] = await database
         .select({
@@ -35,6 +46,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           to: outgoingEmails.to,
           cc: outgoingEmails.cc,
           bcc: outgoingEmails.bcc,
+          recipientName: outgoingEmails.recipientName,
           subject: outgoingEmails.subject,
           text: outgoingEmails.text,
           sentAt: outgoingEmails.sentAt,

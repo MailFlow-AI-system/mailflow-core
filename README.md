@@ -114,6 +114,8 @@ uses the existing `RESEND_API_KEY` and verified `RESEND_FROM_EMAIL` configuratio
 The sender is controlled by Core; clients cannot choose a From address. Requests
 require a session, a trusted Origin, and JSON with a UUID `id`, `to`, `cc`, `bcc`,
 `subject`, `html`, `text`, and Base64 `attachments` (`filename` and `content`).
+The optional `recipientName` is trimmed, limited to 200 characters, and stored
+with the sent copy. Missing or blank names preserve legacy retry hashes.
 Inline image attachments also accept `contentId` and an image `contentType`.
 At least one To recipient is required by Resend. Limits are 50 recipients,
 10 MiB per attachment, and 25 MiB of decoded attachments per message.
@@ -176,3 +178,10 @@ resource ownership and CI changes. The explicit, idempotent policy fixes the thr
 existing API instances without that migration. Re-run the policy check when service
 ids or deployment settings change. Actual SQL execution must be validated during
 the next staging promotion.
+
+
+Recipient names are optional display metadata for the Composition, separate from
+the validated To/Cc/Bcc delivery addresses. The additive Mail migration gives
+existing messages an empty name so clients can fall back to their email addresses.
+A single display-name field does not infer contacts or names for individual
+addresses in a multi-recipient message.
