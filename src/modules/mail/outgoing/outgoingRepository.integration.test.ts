@@ -77,4 +77,15 @@ integration('outgoing mail PostgreSQL persistence', () => {
     expect(second).toHaveLength(2)
     expect(new Set([...first.slice(0, 20), ...second].map(({ id }) => id)).size).toBe(22)
   })
+  it('persists the optional recipient name in Sent and keeps legacy unnamed sends valid', async () => {
+    const dependencies = { repository, deliver: async () => 'provider-id' }
+    await sendEmail(dependencies, 'owner', { ...input, recipientName: 'Ada Lovelace' })
+    expect(await repository.listSent('owner', 0)).toEqual([
+      expect.objectContaining({ recipientName: 'Ada Lovelace', to: input.to }),
+    ])
+    await sendEmail(dependencies, 'owner', { ...input, id: '00000000-0000-4000-8000-000000000002' })
+    expect(await repository.listSent('owner', 0)).toContainEqual(
+      expect.objectContaining({ recipientName: '' }),
+    )
+  })
 })

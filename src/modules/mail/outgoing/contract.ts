@@ -33,6 +33,13 @@ export const sendEmailSchema = z
     to: z.array(z.email()).min(1).max(50),
     cc: z.array(z.email()).max(50).default([]),
     bcc: z.array(z.email()).max(50).default([]),
+    recipientName: z
+      .string()
+      .trim()
+      .max(200)
+      .regex(/^[^\r\n]*$/)
+      .transform((name) => name || undefined)
+      .optional(),
     subject: z
       .string()
       .max(998)
@@ -107,6 +114,7 @@ export const sentEmailsRoute = createRoute({
                 to: z.array(z.string()),
                 cc: z.array(z.string()),
                 bcc: z.array(z.string()),
+                recipientName: z.string(),
                 subject: z.string(),
                 text: z.string(),
                 sentAt: z.iso.datetime().nullable(),

@@ -1,0 +1,1 @@
+ALTER TABLE "mail"."outgoing_email" ADD COLUMN "recipient_name" text DEFAULT '' NOT NULL;
