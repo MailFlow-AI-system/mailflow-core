@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "id": "mailflow-browser-upload",
+      "allowed": {
+        "origins": ["https://app.mailflow-ai.online"],
+        "methods": ["PUT"],
+        "headers": ["content-type"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 300
+    }
+  ]
+}

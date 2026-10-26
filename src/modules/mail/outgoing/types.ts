@@ -1,5 +1,23 @@
 import type { SendEmailInput } from './contract.js'
 
+export type ProviderAttachment = {
+  filename: string
+  content: string
+  contentType?: string
+  contentId?: string
+}
+export type ProviderEmailInput = Omit<SendEmailInput, 'attachments'> & {
+  attachments: ProviderAttachment[]
+}
+export type SentAttachment = {
+  id: string
+  filename: string
+  contentType: string
+  size: number
+  sha256: string
+  contentId: string | null
+}
+
 export type ReservedEmail = {
   id: string
   payloadHash: string
@@ -15,6 +33,7 @@ export type SentEmail = {
   subject: string
   text: string
   sentAt: Date | null
+  attachments?: SentAttachment[]
 }
 export type OutgoingRepository = {
   reserve: (
@@ -22,8 +41,13 @@ export type OutgoingRepository = {
   ) => Promise<ReservedEmail>
   markSent: (userId: string, id: string, providerId: string) => Promise<void>
   listSent: (userId: string, offset: number) => Promise<SentEmail[]>
+  findSent?: (userId: string, id: string) => Promise<(SentEmail & { html: string }) | null>
 }
 export type OutgoingMail = {
   repository: OutgoingRepository
-  deliver: (input: SendEmailInput, idempotencyKey: string) => Promise<string>
+  deliver: (input: ProviderEmailInput, idempotencyKey: string) => Promise<string>
+  resolveAttachments?: (
+    userId: string,
+    references: SendEmailInput['attachments'],
+  ) => Promise<ProviderAttachment[]>
 }

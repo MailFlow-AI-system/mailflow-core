@@ -84,12 +84,6 @@ describe('outgoing mail HTTP', () => {
     { ...input, from: 'spoof@example.test' },
     { ...input, attachments: [{ filename: 'hello.txt', content: 'invalid base64!' }] },
     { ...input, to: Array(51).fill('ada@example.test') },
-    {
-      ...input,
-      attachments: [
-        { filename: 'large.bin', content: Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64') },
-      ],
-    },
   ])('rejects invalid send input without delivery', async (body) => {
     const { send, outgoingMail } = setup()
     expect((await send(body)).status).toBe(400)
@@ -117,4 +111,42 @@ describe('outgoing mail HTTP', () => {
     expect((await send()).status).toBe(503)
     expect(outgoingMail.deliver).not.toHaveBeenCalled()
   })
+})
+
+it('rejects legacy Base64 attachments with an actionable error', async () => {
+  const { send, outgoingMail } = setup()
+  const response = await send({
+    ...input,
+    attachments: [{ filename: 'file.txt', content: 'c2VjcmV0' }],
+  })
+  expect(response.status).toBe(400)
+  const body = await response.json()
+  expect(body.code).toBe('legacy_attachment_unsupported')
+  expect(body.detail).toContain('upload')
+  expect(JSON.stringify(body)).not.toContain('c2VjcmV0')
+  expect(outgoingMail.deliver).not.toHaveBeenCalled()
+})
+
+it('limits oversized legacy bodies before parsing', async () => {
+  const { send } = setup()
+  expect(
+    (
+      await send({
+        ...input,
+        attachments: [
+          { filename: 'large.bin', content: Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64') },
+        ],
+      })
+    ).status,
+  ).toBe(413)
+})
+
+it('rejects malformed JSON without exposing parsing errors', async () => {
+  const { app } = setup()
+  const response = await app.request('/api/v1/mail/send', {
+    method: 'POST',
+    headers: { origin: 'https://mail.example.test', 'content-type': 'application/json' },
+    body: '{bad json',
+  })
+  expect(response.status).toBe(400)
 })
