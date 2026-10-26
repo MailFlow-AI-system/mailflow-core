@@ -106,19 +106,18 @@ connection targets, permissions, and ledgers. Failures block deployment; rerunni
 resumes from committed module ledgers. Keep migrations compatible with the running
 application. Image rollback does not revert SQL.
 
-
 ## Outgoing email
 
 Apply the Mail migration before enabling this version. `POST /api/v1/mail/send`
 uses the existing `RESEND_API_KEY` and verified `RESEND_FROM_EMAIL` configuration.
 The sender is controlled by Core; clients cannot choose a From address. Requests
 require a session, a trusted Origin, and JSON with a UUID `id`, `to`, `cc`, `bcc`,
-`subject`, `html`, `text`, and Base64 `attachments` (`filename` and `content`).
+`subject`, `html`, `text`, and attachment references (`id` and optional `contentId`).
 The optional `recipientName` is trimmed, limited to 200 characters, and stored
 with the sent copy. Missing or blank names preserve legacy retry hashes.
-Inline image attachments also accept `contentId` and an image `contentType`.
-At least one To recipient is required by Resend. Limits are 50 recipients,
-10 MiB per attachment, and 25 MiB of decoded attachments per message.
+Inline images use a `contentId` and verified image content. At least one To recipient
+is required by Resend. Limits are 50 recipients, 10 attachments including inline
+images, 10,000,000 bytes per file, and 20,000,000 bytes per message.
 
 Keep the same id and content when retrying an uncertain request. Core reserves
 an owner-scoped record before calling Resend and records success only after
@@ -126,8 +125,8 @@ Resend returns an email id. Retrying a confirmed message returns the existing
 result. A changed payload with the same id returns 409. Pending reservations
 older than 23 hours also return 409, preventing a duplicate after Resend's
 24-hour idempotency retention expires; inspect the provider before starting a
-new send in that case. Attachment bytes are sent to Resend but are not retained
-in the local sent copy.
+new send in that case. Attachment bytes remain in private object storage, and
+sent metadata references the immutable scanned objects.
 
 `GET /api/v1/mail/sent?offset=0` returns only the authenticated user's confirmed
 messages, in pages of twenty with `nextOffset`. Sent means provider acceptance;
@@ -152,7 +151,6 @@ than weakening its existing isolation guard. Follow-up work is tenant-scoped
 mail and provider webhook reconciliation for final delivery and old uncertain
 attempts.
 
-
 Development authentication accepts HTTP and HTTPS origins on any port for the
 exact loopback hosts `localhost`, `127.0.0.1`, and `[::1]`. The same policy covers
 credentialed CORS, Better Auth requests, and recovery callbacks (including the
@@ -160,16 +158,45 @@ callback GET without an Origin header). Staging and production retain their
 configured origin policy. Do not replace host validation with `localhost*`:
 that pattern can include unrelated domains such as `localhost.example.com`.
 
+## Attachment storage
 
-Local Composer images are converted to CID attachments before delivery, following
-[Resend's inline image format](https://resend.com/changelog/embed-images-using-cid).
-The API validates the content id and image MIME type, and the same aggregate
-attachment limits apply. This embeds image bytes in the email without requiring
-public object hosting. It does not add durable attachment storage: sent HTML may
-reference a CID while the corresponding binary is retained only by the delivered
-email/provider, not by the MailFlow repository. A future reader or attachment
-download feature needs an explicit storage and retention design.
+The browser requests a short-lived upload URL through authenticated
+`POST /api/v1/mail/attachments`, uploads directly with the returned headers, and
+calls `POST /api/v1/mail/attachments/{id}/complete`. Completion copies the upload
+to an immutable private key, verifies the byte count, metadata and SHA-256, and
+scans it with ClamAV. `GET /api/v1/mail/attachments/{id}` returns its state;
+only clean attachments can be sent or downloaded. Inline image references carry
+an optional content ID and are validated against the image signature. Unscannable
+files fail closed and can be retried. Legacy requests containing Base64 attachment
+bytes are rejected. All operations remain owner-scoped; workspace mail is blocked.
 
+Set the R2 and ClamAV variables in `.env.example` for each environment. Bucket
+CORS must permit the exact Web origin to issue PUT requests with Content-Type;
+never publish the bucket. Apply lifecycle expiration only to `pending/`, not to
+`objects/`. Scanner access must remain private and its signatures must stay fresh.
+The service rejects signatures older than 48 hours. Production must configure
+ClamAV archive and resource limits and monitor scanning failures.
+
+The default local development command uses the development R2 bucket and a
+local scanner: start `docker compose up -d clamav` before sending files. Wait for
+ClamAV to load current signatures. For offline object storage, the optional MinIO
+service in `compose.yaml` requires its own private bucket, CORS policy, local-only
+credentials, and an explicit `R2_ENDPOINT` override.
+
+Versioned bucket policies and environment mapping are in `infrastructure/r2/`.
+Private Railway scanner configuration is in `infrastructure/clamav/`. Runtime
+credentials are distinct for each environment and never reach Web Workers.
+
+The API starts cleanup asynchronously and repeats it hourly without overlapping
+local runs. Each run handles at most ten expired-metadata batches and ten orphan
+object pages; the pagination cursor continues on the next run. Shutdown stops
+new batches and awaits current work before closing the database. Referenced send
+attachments are excluded through database locks and a fresh association check.
+
+`bun run attachments:cleanup` remains an operator command for one bounded batch
+and one orphan-object page with runtime configuration. Pass a returned
+`nextCursor` as its argument to continue pagination. The staging promotion must
+still validate the combined deployed application and migration pipeline.
 
 The migration policy uses Railway's API rather than a shared root deployment file
 that could also affect worker services. Native config-as-code is deprecated with
@@ -178,7 +205,6 @@ resource ownership and CI changes. The explicit, idempotent policy fixes the thr
 existing API instances without that migration. Re-run the policy check when service
 ids or deployment settings change. Actual SQL execution must be validated during
 the next staging promotion.
-
 
 Recipient names are optional display metadata for the Composition, separate from
 the validated To/Cc/Bcc delivery addresses. The additive Mail migration gives

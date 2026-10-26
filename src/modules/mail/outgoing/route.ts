@@ -23,7 +23,7 @@ export function createOutgoingMailModule(
   app.use(
     '/api/v1/mail/send',
     bodyLimit({
-      maxSize: 37 * 1024 * 1024,
+      maxSize: 13 * 1024 * 1024,
       onError: (context) =>
         problemDetailsResponse(context, {
           title: 'Payload too large',
@@ -33,6 +33,34 @@ export function createOutgoingMailModule(
         }),
     }),
   )
+  app.use('/api/v1/mail/send', async (context, next) => {
+    let body: unknown
+    try {
+      body = await context.req.json()
+    } catch {
+      return problemDetailsResponse(context, {
+        title: 'Bad request',
+        status: 400,
+        detail: 'A valid JSON message is required.',
+        code: 'invalid_json',
+      })
+    }
+    const files =
+      body && typeof body === 'object' && 'attachments' in body ? body.attachments : null
+    if (
+      Array.isArray(files) &&
+      files.some(
+        (file) => file && typeof file === 'object' && ('content' in file || 'filename' in file),
+      )
+    )
+      return problemDetailsResponse(context, {
+        title: 'Legacy attachment format',
+        status: 400,
+        detail: 'Please upload attachments again before sending.',
+        code: 'legacy_attachment_unsupported',
+      })
+    await next()
+  })
   app.openapi(sendEmailRoute, async (context) => {
     try {
       return context.json(

@@ -9,17 +9,10 @@ const input = {
   subject: 'Inline image',
   html: '<img src="cid:mailflow-inline-1">',
   text: 'Inline image',
-  attachments: [
-    {
-      filename: 'image.png',
-      content: 'aGVsbG8=',
-      contentId: 'mailflow-inline-1',
-      contentType: 'image/png',
-    },
-  ],
+  attachments: [{ id: '00000000-0000-4000-8000-000000000002', contentId: 'mailflow-inline-1' }],
 }
-describe('inline image attachment contract', () => {
-  it('accepts CID images with explicit MIME type', () => {
+describe('stored attachment reference contract', () => {
+  it('accepts stable attachment ids and CID mapping', () => {
     expect(sendEmailSchema.safeParse(input).success).toBe(true)
   })
   it.each(['bad\r\nHeader: injected', 'a'.repeat(128)])(
@@ -49,4 +42,36 @@ describe('optional recipient display name', () => {
       expect(sendEmailSchema.safeParse({ ...input, recipientName }).success).toBe(false)
     },
   )
+})
+
+it('rejects legacy binary-bearing requests, repeated attachment ids and repeated content ids', () => {
+  expect(
+    sendEmailSchema.safeParse({
+      ...input,
+      attachments: [{ filename: 'hello.txt', content: 'aGVsbG8=' }],
+    }).success,
+  ).toBe(false)
+  expect(
+    sendEmailSchema.safeParse({
+      ...input,
+      attachments: [input.attachments[0], input.attachments[0]],
+    }).success,
+  ).toBe(false)
+  expect(
+    sendEmailSchema.safeParse({
+      ...input,
+      attachments: [
+        input.attachments[0],
+        { id: '00000000-0000-4000-8000-000000000003', contentId: 'mailflow-inline-1' },
+      ],
+    }).success,
+  ).toBe(false)
+  expect(
+    sendEmailSchema.safeParse({
+      ...input,
+      attachments: Array.from({ length: 11 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      })),
+    }).success,
+  ).toBe(false)
 })

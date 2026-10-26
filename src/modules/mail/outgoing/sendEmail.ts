@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { SendEmailInput } from './contract.js'
-import type { OutgoingMail } from './types.js'
+import type { OutgoingMail, ProviderAttachment } from './types.js'
 
 export class MessageConflictError extends Error {}
 export async function sendEmail(
-  { repository, deliver }: OutgoingMail,
+  { repository, deliver, resolveAttachments }: OutgoingMail,
   userId: string,
   input: SendEmailInput,
 ) {
@@ -16,7 +16,12 @@ export async function sendEmail(
     // Resend retains keys for 24 hours; uncertain attempts must not be sent again after expiry.
     if (Date.now() - record.createdAt.getTime() >= 23 * 60 * 60 * 1000)
       throw new MessageConflictError('The retry window has expired')
-    const providerId = await deliver(input, `mail/${userId}/${input.id}`)
+    let attachments: ProviderAttachment[] = []
+    if (input.attachments.length) {
+      if (!resolveAttachments) throw new Error('Attachment storage unavailable')
+      attachments = await resolveAttachments(userId, input.attachments)
+    }
+    const providerId = await deliver({ ...input, attachments }, `mail/${userId}/${input.id}`)
     await repository.markSent(userId, input.id, providerId)
   }
   return { id: record.id, status: 'sent' as const }
