@@ -618,3 +618,29 @@ describe('Better Auth account email lifecycle', () => {
     expect(expiredReset.status).toBe(400)
   })
 })
+
+it('accepts sign-in and recovery on an unconfigured localhost port, including the email callback without Origin', async () => {
+  const { app, sent } = createTestAuth()
+  const origin = 'http://localhost:3001'
+  const email = 'localhost-port-validation@mailflow.invalid'
+  const password = 'safe-test-password-123'
+  expect(
+    (await post(app, '/sign-up/email', { name: 'Local validation', email, password }, origin))
+      .status,
+  ).toBe(200)
+  const otp = findLast(sent, (message) => message.kind === 'verification-otp')
+  if (otp?.kind !== 'verification-otp') throw new Error('Expected verification OTP')
+  expect((await post(app, '/email-otp/verify-email', { email, otp: otp.otp }, origin)).status).toBe(
+    200,
+  )
+  expect((await post(app, '/sign-in/email', { email, password }, origin)).status).toBe(200)
+  const redirectTo = `${origin}/reset-password`
+  expect((await post(app, '/request-password-reset', { email, redirectTo }, origin)).status).toBe(
+    200,
+  )
+  const reset = findLast(sent, (message) => message.kind === 'password-reset')
+  if (reset?.kind !== 'password-reset') throw new Error('Expected recovery email')
+  const callback = await app.request(reset.url)
+  expect(callback.status).toBe(302)
+  expect(new URL(callback.headers.get('location') ?? '').origin).toBe(origin)
+})

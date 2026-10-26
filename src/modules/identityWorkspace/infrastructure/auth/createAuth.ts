@@ -73,9 +73,7 @@ export function createAuthOptions(
     ],
     secret: config.secret,
     baseURL: config.baseURL,
-    trustedOrigins: config.workspaceDeployment
-      ? (request?: Request) => trustedAuthOrigins(config, request)
-      : config.allowedOrigins,
+    trustedOrigins: (request?: Request) => trustedAuthOrigins(config, request),
     rateLimit: {
       enabled: true,
       storage: 'database' as const,
