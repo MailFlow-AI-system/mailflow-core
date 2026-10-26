@@ -5,7 +5,6 @@ import {
   type AttachmentMetadata,
   AttachmentMismatchError,
   type AttachmentRepository,
-  type AttachmentScanner,
   type AttachmentView,
   type ObjectStorage,
 } from './types.js'
@@ -13,11 +12,9 @@ import {
 export function createAttachmentService({
   repository,
   storage,
-  scanner,
 }: {
   repository: AttachmentRepository
   storage: ObjectStorage
-  scanner: AttachmentScanner
 }) {
   let activeCompletions = 0
   async function getView(userId: string, id: string): Promise<AttachmentView | null> {
@@ -42,8 +39,6 @@ export function createAttachmentService({
         temporaryKey,
         finalKey: null,
         status: 'pending',
-        scanVersion: null,
-        scannedAt: null,
         rejectionReason: null,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         claimToken: null,
@@ -72,7 +67,7 @@ export function createAttachmentService({
       return bytes
     },
     async complete(userId: string, id: string) {
-      if (activeCompletions >= 2) throw new Error('Attachment scanning is busy')
+      if (activeCompletions >= 2) throw new Error('Attachment verification is busy')
       activeCompletions++
       try {
         const existing = await getView(userId, id)
@@ -89,15 +84,11 @@ export function createAttachmentService({
         const finalKey = `${record.temporaryKey.replace(/^pending\//, 'objects/')}/${randomUUID()}`
         const finish = async (
           status: 'clean' | 'rejected' | 'error',
-          version: string | null,
-          scannedAt: Date | null,
           rejectionReason: string | null = null,
         ) =>
           repository.finishCompletion(userId, id, token, {
             status,
             finalKey: status === 'clean' ? finalKey : null,
-            scanVersion: version,
-            scannedAt,
             rejectionReason,
           })
         try {
@@ -109,7 +100,7 @@ export function createAttachmentService({
           ) {
             await storage.delete(finalKey)
             return (
-              (await finish('rejected', null, null, 'checksum_mismatch')) ??
+              (await finish('rejected', 'checksum_mismatch')) ??
               (await repository.get(userId, id)) ??
               record
             )
@@ -121,24 +112,13 @@ export function createAttachmentService({
             return (
               (await finish(
                 'rejected',
-                null,
-                null,
                 error instanceof UnsupportedArchiveError ? 'unsupported_archive' : 'unsafe_archive',
               )) ??
               (await repository.get(userId, id)) ??
               record
             )
           }
-          const result = await scanner.scan(bytes)
-          if (result.result !== 'clean') {
-            await storage.delete(finalKey)
-            return (
-              (await finish('rejected', result.version, new Date(), 'infected')) ??
-              (await repository.get(userId, id)) ??
-              record
-            )
-          }
-          const saved = await finish('clean', result.version, new Date())
+          const saved = await finish('clean')
           if (!saved) await storage.delete(finalKey)
           return saved ?? (await repository.get(userId, id)) ?? record
         } catch (error) {
@@ -146,8 +126,6 @@ export function createAttachmentService({
           return (
             (await finish(
               error instanceof AttachmentMismatchError ? 'rejected' : 'error',
-              null,
-              null,
               error instanceof AttachmentMismatchError ? 'checksum_mismatch' : null,
             )) ??
             (await repository.get(userId, id)) ??

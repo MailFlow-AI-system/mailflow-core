@@ -40,4 +40,4 @@ Environment buckets and bucket-scoped runtime credentials prevent an application
 from selecting another environment's files. Private buckets plus owner checks in
 Core preserve access control; a CORS allowlist is not object authorization. Uploads
 use temporary keys and verified server-only immutable copies so replaying a PUT
-cannot change bytes that were scanned or attached to a sent message.
+cannot change bytes that were verified or attached to a sent message.
