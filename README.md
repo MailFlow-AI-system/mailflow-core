@@ -33,6 +33,7 @@ available outside production.
 | `bun run db:generate:<module>` / `bun run db:check:<module>` | Generate or check migrations |
 | `bun run db:migrate` / `bun run db:migrate:<module>` | Migrate all modules or one module |
 | `bun run db:seed:mail` | Insert 33 fictional Inbox messages idempotently |
+| `bun run deploy:check` / `bun run deploy:configure` | Check or apply Railway API migration policy |
 
 ## Migrations
 
@@ -78,17 +79,32 @@ Collector using `bun run observability:collector:validate`.
 
 ## Railway deployment
 
-Configure the API service in each environment:
-
-- Pre-deploy: `node dist/entrypoints/migrate.js`, with a 300-second timeout.
-- Healthcheck: `/health/ready`, with a 300-second timeout. Enable Wait for CI.
-
-The image must include the runner and SQL files, with Infisical-synced `DIRECT_URL`.
-Before activation, verify the Neon branch, connection targets, permissions, and ledgers.
+The API must run migrations before every deployment. The versioned policy in
+`src/shared/deployment/railwayMigrations.ts` maps `development` to development,
+`staging` to staging, and `main` to production using explicit environment and API
+service ids. It configures the pre-deploy command `node dist/entrypoints/migrate.js`
+with a 300-second timeout, and `/health/ready` with a 300-second timeout.
 Workers and Collectors do not run migrations.
 
-Failures block deployment; rerunning resumes from committed module ledgers. Keep
-migrations compatible with the running application. Image rollback does not revert SQL.
+With a Railway account API token available as `RAILWAY_API_TOKEN`, run:
+
+```bash
+bun run deploy:check
+bun run deploy:configure
+bun run deploy:check
+```
+
+The check is read-only and exits nonzero on drift. Configuration validates every
+API destination before changing anything, updates only migration and healthcheck
+settings, and verifies them afterward. It does not deploy or execute SQL. Enable
+Wait for CI on each API service. CI checks migrations against a disposable database;
+the Railway pre-deploy command applies them to the deployed environment.
+
+The image must include the runner and SQL files, with Infisical-synced `DIRECT_URL`
+pointing to that environment's database. Before activation, verify the Neon branch,
+connection targets, permissions, and ledgers. Failures block deployment; rerunning
+resumes from committed module ledgers. Keep migrations compatible with the running
+application. Image rollback does not revert SQL.
 
 
 ## Outgoing email
@@ -151,3 +167,12 @@ public object hosting. It does not add durable attachment storage: sent HTML may
 reference a CID while the corresponding binary is retained only by the delivered
 email/provider, not by the MailFlow repository. A future reader or attachment
 download feature needs an explicit storage and retention design.
+
+
+The migration policy uses Railway's API rather than a shared root deployment file
+that could also affect worker services. Native config-as-code is deprecated with
+removal announced for December 1, 2026; a full IaC adoption would require broader
+resource ownership and CI changes. The explicit, idempotent policy fixes the three
+existing API instances without that migration. Re-run the policy check when service
+ids or deployment settings change. Actual SQL execution must be validated during
+the next staging promotion.
