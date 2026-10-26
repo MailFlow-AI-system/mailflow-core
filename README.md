@@ -56,7 +56,8 @@ See the [Architecture Hub](https://mailflow-architecture-hub.vercel.app/) for de
 ## API and testing
 
 Authentication uses `/api/auth`; routes under `/api/v1` require a session.
-`GET /api/v1/workspaces/{slug}/mail/messages` provides paginated search scoped to an authorized workspace. Errors use Problem Details.
+`GET /api/v1/mail/messages` provides paginated search. Inbox messages are currently
+shared by all authenticated users. Errors use Problem Details.
 
 `bun run test` requires the local PostgreSQL from `bun run db:up`; no variable is needed.
 Set `MAILFLOW_WORKSPACE_TEST_DATABASE_URL` only to use another local database.
@@ -89,30 +90,64 @@ Workers and Collectors do not run migrations.
 Failures block deployment; rerunning resumes from committed module ledgers. Keep
 migrations compatible with the running application. Image rollback does not revert SQL.
 
-## Local workspace setup
 
-Use the disposable PostgreSQL from `bun run db:up`. No shared database is supported by these commands.
-With the pinned Node/Bun versions, run:
+## Outgoing email
 
-```bash
-export DIRECT_URL=postgresql://mailflow:mailflow@localhost:5432/mailflow
-bunx tsx src/entrypoints/migrate.ts
-bun run db:setup:local
-bun run dev:workspace-sample
-export DATABASE_URL=postgresql://mailflow_app:mailflow_app_local_only@localhost:5432/mailflow
-bunx tsx --conditions=development src/modules/mail/seed/run.ts --workspace-id <printed-workspaceId>
-```
+Apply the Mail migration before enabling this version. `POST /api/v1/mail/send`
+uses the existing `RESEND_API_KEY` and verified `RESEND_FROM_EMAIL` configuration.
+The sender is controlled by Core; clients cannot choose a From address. Requests
+require a session, a trusted Origin, and JSON with a UUID `id`, `to`, `cc`, `bcc`,
+`subject`, `html`, `text`, and Base64 `attachments` (`filename` and `content`).
+Inline image attachments also accept `contentId` and an image `contentType`.
+At least one To recipient is required by Resend. Limits are 50 recipients,
+10 MiB per attachment, and 25 MiB of decoded attachments per message.
 
-Setup is idempotent; each sample command creates a new verified user and workspace, without OTP or Resend.
-It prints fictional local credentials and the workspace ID. Provisioning stays in `scripts/local/`, outside the production build.
-Keep `DIRECT_URL` on the migration owner and `DATABASE_URL` on the restricted role.
+Keep the same id and content when retrying an uncertain request. Core reserves
+an owner-scoped record before calling Resend and records success only after
+Resend returns an email id. Retrying a confirmed message returns the existing
+result. A changed payload with the same id returns 409. Pending reservations
+older than 23 hours also return 409, preventing a duplicate after Resend's
+24-hour idempotency retention expires; inspect the provider before starting a
+new send in that case. Attachment bytes are sent to Resend but are not retained
+in the local sent copy.
 
-Set `APP_ENV=development`, `WORKSPACE_READ_ENABLED=true`, `WORKSPACE_LOCAL_SWITCHING_ENABLED=true`,
-`BETTER_AUTH_URL=http://localhost:8080`, `SITE_URL=http://workspace.test:3000`,
-and `WEB_APP_URL=http://<printed-slug>.workspace.test:3000`. The exact Site/Web origins allow the base host and sample tenant locally.
-Keep a local `BETTER_AUTH_SECRET` of at least 32 characters and the required Resend configuration; sample provisioning sends no email.
-Start the API using `bunx tsx --conditions=development src/entrypoints/api.ts` with these environment variables.
+`GET /api/v1/mail/sent?offset=0` returns only the authenticated user's confirmed
+messages, in pages of twenty with `nextOffset`. Sent means provider acceptance;
+later delivery, bounce, and complaint events require a separate webhook feature.
+The existing workspace guard continues to block these endpoints in workspace
+mode until tenant-scoped mail is implemented.
 
-Add `127.0.0.1 workspace.test <printed-slug>.workspace.test` to hosts. If the browser runs on Windows, edit the Windows hosts file even when the API runs in WSL.
-The Web needs `VITE_API_BASE_URL=http://localhost:8080`, `VITE_WORKSPACE_BASE_HOST=workspace.test`
-and `VITE_WORKSPACE_LOCAL_SWITCHING_ENABLED=true`. The generic host resolves membership before redirecting to a tenant; mail requires a tenant host.
+The outgoing repository integration tests use
+`MAILFLOW_MAIL_INTEGRATION_DATABASE_URL`. Real provider smoke tests should use
+`delivered@resend.dev`, never an arbitrary recipient.
+
+## Listening
+
+Outgoing delivery uses the existing Resend SDK and a synchronous API response
+so the Composer can report the provider result immediately. A separate queue
+and worker were unnecessary for this interactive flow. Durable reservations
+and provider idempotency protect retries, including failure to persist after
+provider acceptance. Sent copies have their own owner-scoped table because the
+legacy Inbox table is global; inserting outgoing messages there would expose
+private recipients to other users. Workspace mail remains unavailable rather
+than weakening its existing isolation guard. Follow-up work is tenant-scoped
+mail and provider webhook reconciliation for final delivery and old uncertain
+attempts.
+
+
+Development authentication accepts HTTP and HTTPS origins on any port for the
+exact loopback hosts `localhost`, `127.0.0.1`, and `[::1]`. The same policy covers
+credentialed CORS, Better Auth requests, and recovery callbacks (including the
+callback GET without an Origin header). Staging and production retain their
+configured origin policy. Do not replace host validation with `localhost*`:
+that pattern can include unrelated domains such as `localhost.example.com`.
+
+
+Local Composer images are converted to CID attachments before delivery, following
+[Resend's inline image format](https://resend.com/changelog/embed-images-using-cid).
+The API validates the content id and image MIME type, and the same aggregate
+attachment limits apply. This embeds image bytes in the email without requiring
+public object hosting. It does not add durable attachment storage: sent HTML may
+reference a CID while the corresponding binary is retained only by the delivered
+email/provider, not by the MailFlow repository. A future reader or attachment
+download feature needs an explicit storage and retention design.

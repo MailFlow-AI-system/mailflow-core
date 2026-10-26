@@ -11,7 +11,7 @@ import {
   createWorkspaceSelectionRoutes,
   installAuthRoutes,
 } from '#modules/identityWorkspace'
-import { createMailModule } from '#modules/mail'
+import { blockGlobalWorkspaceMail, createMailModule, createOutgoingMailModule } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
@@ -26,6 +26,7 @@ export function createApp({
   allowedAuthOrigins,
   isAllowedAuthOrigin,
   mailRepository,
+  outgoingMail,
   workspaces,
   onboarding,
   workspaceSelection,
@@ -43,13 +44,16 @@ export function createApp({
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
-  if (mailRepository && workspaces)
+  if (workspaces || onboarding || workspaceSelection || workspaceEntry)
+    app.use('/api/v1/mail/*', blockGlobalWorkspaceMail)
+  if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
+  if (outgoingMail)
     app.route(
       '/',
-      createMailModule({
-        repository: mailRepository,
-        resolveWorkspace: (userId, slug) => workspaces.reader.context(userId, slug),
-      }),
+      createOutgoingMailModule(
+        outgoingMail,
+        isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
+      ),
     )
   if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
   if (onboarding) app.route('/', createOnboardingRoutes(onboarding))

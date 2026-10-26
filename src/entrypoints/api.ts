@@ -1,6 +1,10 @@
 import { serve } from '@hono/node-server'
 import { createIdentityWorkspaceRuntime } from '#modules/identityWorkspace'
-import { assertMailDatabaseRole, createMailMessageRepository } from '#modules/mail'
+import {
+  createMailMessageRepository,
+  createOutgoingRepository,
+  createResendDelivery,
+} from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
 import { createLogger, shutdownLogger } from '#shared/logging/logger'
@@ -19,14 +23,17 @@ const identityWorkspace = await createIdentityWorkspaceRuntime({
   reportEmailDeliveryFailure: (operation) =>
     logger.error({ operation }, 'Account email delivery failed'),
 })
-if (identityWorkspace.workspaces) await assertMailDatabaseRole(database.pool)
 const app = createApp({
   config,
   logger,
   observability: telemetry,
   checkDatabase: database.check,
   ...identityWorkspace,
-  mailRepository: createMailMessageRepository(database.pool),
+  mailRepository: createMailMessageRepository(database.database),
+  outgoingMail: {
+    repository: createOutgoingRepository(database.database),
+    deliver: createResendDelivery(process.env),
+  },
 })
 
 const server = serve({
