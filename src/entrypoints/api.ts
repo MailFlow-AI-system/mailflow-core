@@ -1,9 +1,17 @@
 import { serve } from '@hono/node-server'
 import { createIdentityWorkspaceRuntime } from '#modules/identityWorkspace'
 import {
+  cleanupAttachments,
+  cleanupOrphanObjects,
+  createAttachmentRepository,
+  createAttachmentService,
+  createClamavScanner,
   createMailMessageRepository,
+  createObjectStorage,
   createOutgoingRepository,
   createResendDelivery,
+  loadClamavConfig,
+  startAttachmentCleanupScheduler,
 } from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
 import { createDatabase } from '#shared/database/client'
@@ -23,6 +31,13 @@ const identityWorkspace = await createIdentityWorkspaceRuntime({
   reportEmailDeliveryFailure: (operation) =>
     logger.error({ operation }, 'Account email delivery failed'),
 })
+const attachmentRepository = createAttachmentRepository(database.database)
+const objectStorage = createObjectStorage(process.env)
+const attachments = createAttachmentService({
+  repository: attachmentRepository,
+  storage: objectStorage,
+  scanner: createClamavScanner(loadClamavConfig(process.env)),
+})
 const app = createApp({
   config,
   logger,
@@ -30,9 +45,11 @@ const app = createApp({
   checkDatabase: database.check,
   ...identityWorkspace,
   mailRepository: createMailMessageRepository(database.database),
+  attachments,
   outgoingMail: {
     repository: createOutgoingRepository(database.database),
     deliver: createResendDelivery(process.env),
+    resolveAttachments: attachments.resolveReferences,
   },
 })
 
@@ -43,9 +60,16 @@ const server = serve({
 })
 
 logger.info({ host: config.host, port: config.port }, 'API started')
+const stopAttachmentCleanup = startAttachmentCleanupScheduler({
+  cleanupBatch: () => cleanupAttachments(attachmentRepository, objectStorage),
+  cleanupPage: (cursor) => cleanupOrphanObjects(attachmentRepository, objectStorage, cursor),
+  reportSummary: (summary) => logger.info(summary, 'Attachment cleanup completed'),
+  reportFailure: (phase) => logger.error({ phase }, 'Attachment cleanup failed'),
+})
 
 const signal = await waitForShutdown()
 logger.info({ signal }, 'API shutdown started')
+const cleanupStopped = stopAttachmentCleanup()
 
 const forceShutdown = setTimeout(() => {
   logger.warn('API graceful shutdown timed out')
@@ -68,6 +92,7 @@ try {
   })
 } finally {
   clearTimeout(forceShutdown)
+  await cleanupStopped
   await database.pool.end()
   logger.info('API shutdown completed')
   await shutdownLogger(logger)

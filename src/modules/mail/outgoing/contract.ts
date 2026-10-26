@@ -1,31 +1,14 @@
 import { createRoute, z } from '@hono/zod-openapi'
 
-const attachmentSchema = z
-  .strictObject({
-    filename: z
-      .string()
-      .min(1)
-      .max(255)
-      .regex(/^[^\r\n/\\]+$/),
-    contentId: z
-      .string()
-      .min(1)
-      .max(127)
-      .regex(/^[A-Za-z0-9_-]+$/)
-      .optional(),
-    contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']).optional(),
-    content: z
-      .string()
-      .max(14 * 1024 * 1024)
-      .refine(
-        (content) => Buffer.from(content, 'base64').toString('base64') === content,
-        'Invalid base64',
-      ),
-  })
-  .refine(
-    (file) => Buffer.from(file.content, 'base64').length <= 10 * 1024 * 1024,
-    'Attachment exceeds 10 MiB',
-  )
+const attachmentSchema = z.strictObject({
+  id: z.uuid(),
+  contentId: z
+    .string()
+    .min(1)
+    .max(127)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+})
 
 export const sendEmailSchema = z
   .strictObject({
@@ -46,7 +29,7 @@ export const sendEmailSchema = z
       .regex(/^[^\r\n]*$/),
     html: z.string().max(1024 * 1024),
     text: z.string().max(1024 * 1024),
-    attachments: z.array(attachmentSchema).max(100).default([]),
+    attachments: z.array(attachmentSchema).max(10).default([]),
   })
   .superRefine((message, context) => {
     const recipients = message.to.length + message.cc.length + message.bcc.length
@@ -56,15 +39,13 @@ export const sendEmailSchema = z
         path: ['to'],
         message: 'Provide between 1 and 50 recipients',
       })
-    const size = message.attachments.reduce(
-      (total, file) => total + Buffer.from(file.content, 'base64').length,
-      0,
-    )
-    if (size > 25 * 1024 * 1024)
+    const ids = message.attachments.map(({ id }) => id)
+    const cids = message.attachments.flatMap(({ contentId }) => (contentId ? [contentId] : []))
+    if (new Set(ids).size !== ids.length || new Set(cids).size !== cids.length)
       context.addIssue({
         code: 'custom',
         path: ['attachments'],
-        message: 'Attachments exceed 25 MiB',
+        message: 'Attachment references must be unique',
       })
   })
 export type SendEmailInput = z.infer<typeof sendEmailSchema>
@@ -118,6 +99,18 @@ export const sentEmailsRoute = createRoute({
                 subject: z.string(),
                 text: z.string(),
                 sentAt: z.iso.datetime().nullable(),
+                attachments: z
+                  .array(
+                    z.object({
+                      id: z.uuid(),
+                      filename: z.string(),
+                      contentType: z.string(),
+                      size: z.number(),
+                      sha256: z.string(),
+                      contentId: z.string().nullable(),
+                    }),
+                  )
+                  .optional(),
               }),
             ),
             nextOffset: z.number().nullable(),

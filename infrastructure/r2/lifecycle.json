@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "id": "mailflow-abandoned-pending-upload",
+      "enabled": true,
+      "conditions": {
+        "prefix": "pending/"
+      },
+      "deleteObjectsTransition": {
+        "condition": {
+          "type": "Age",
+          "maxAge": 86400
+        }
+      }
+    }
+  ]
+}
