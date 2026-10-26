@@ -5,12 +5,10 @@ import {
   cleanupOrphanObjects,
   createAttachmentRepository,
   createAttachmentService,
-  createClamavScanner,
   createMailMessageRepository,
   createObjectStorage,
   createOutgoingRepository,
   createResendDelivery,
-  loadClamavConfig,
   startAttachmentCleanupScheduler,
 } from '#modules/mail'
 import { loadConfig } from '#shared/config/env'
@@ -36,7 +34,6 @@ const objectStorage = createObjectStorage(process.env)
 const attachments = createAttachmentService({
   repository: attachmentRepository,
   storage: objectStorage,
-  scanner: createClamavScanner(loadClamavConfig(process.env)),
 })
 const app = createApp({
   config,

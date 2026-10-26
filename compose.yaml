@@ -27,24 +27,7 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
-  clamav:
-    image: clamav/clamav:1.4
-    environment:
-      CLAMD_CONF_AlertExceedsMax: "yes"
-      CLAMD_CONF_AlertEncrypted: "yes"
-      CLAMD_CONF_MaxScanSize: 100M
-      CLAMD_CONF_MaxFileSize: 20M
-      CLAMD_CONF_MaxRecursion: "10"
-      CLAMD_CONF_MaxFiles: "10000"
-      CLAMD_CONF_MaxScanTime: "25000"
-      CLAMD_CONF_StreamMaxLength: 10M
-      CLAMD_CONF_MaxThreads: "2"
-    ports:
-      - "127.0.0.1:3310:3310"
-    volumes:
-      - clamav-data:/var/lib/clamav
 
 volumes:
   minio-data:
-  clamav-data:
   postgres-data:

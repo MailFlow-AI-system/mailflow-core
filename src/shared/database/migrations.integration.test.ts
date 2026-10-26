@@ -92,6 +92,61 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
     }
   })
 
+  it('preserves verified final objects while removing antivirus metadata', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      const previous = readMigrationFiles({
+        migrationsFolder: fileURLToPath(
+          new URL('../../../database/migrations/mail/', import.meta.url),
+        ),
+      }).slice(0, 4)
+      await client.query('CREATE SCHEMA mail_migrations')
+      await client.query(
+        'CREATE TABLE mail_migrations.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+      )
+      for (const migration of previous) {
+        for (const statement of migration.sql) await client.query(statement)
+        await client.query(
+          'INSERT INTO mail_migrations.__drizzle_migrations (hash, created_at) VALUES ($1, $2)',
+          [migration.hash, migration.folderMillis],
+        )
+      }
+      const legacyId = randomUUID()
+      await client.query(
+        `INSERT INTO mail.attachment
+         (user_id, id, filename, content_type, size, sha256, status, temporary_key, final_key, scan_version, scanned_at)
+         VALUES ('migration-owner', $1, 'legacy.txt', 'text/plain', 0, $2, 'clean', 'pending/legacy', 'objects/legacy', 'legacy', now())`,
+        [legacyId, 'b'.repeat(64)],
+      )
+      await runMigrations(environment, ['mail'])
+      expect(
+        (
+          await client.query('SELECT status, final_key FROM mail.attachment WHERE id = $1', [
+            legacyId,
+          ])
+        ).rows,
+      ).toEqual([{ status: 'clean', final_key: 'objects/legacy' }])
+      const id = randomUUID()
+      await client.query(
+        `INSERT INTO mail.attachment
+         (user_id, id, filename, content_type, size, sha256, status, temporary_key, final_key)
+         VALUES ('migration-owner', $1, 'empty.txt', 'text/plain', 0, $2, 'clean', 'pending/test', 'objects/test')`,
+        [id, 'a'.repeat(64)],
+      )
+      const columns = (
+        await client.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_schema = 'mail' AND table_name = 'attachment'",
+        )
+      ).rows.map(({ column_name }) => column_name)
+      expect(columns).not.toContain('scan_version')
+      expect(columns).not.toContain('scanned_at')
+      expect(await ledger(client, 'mail_migrations')).toEqual(expectedLedger('mail'))
+    } finally {
+      await client.end()
+    }
+  })
+
   it('repeats without duplicating ledger entries or changing existing data', async () => {
     const environment = await createTestDatabase()
     await runMigrations(environment)
