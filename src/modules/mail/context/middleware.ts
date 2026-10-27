@@ -103,6 +103,9 @@ export function createMailContextMiddleware(
         })
       context.set('mailContext', { workspaceId: result.workspace.id, userId: session.user.id })
       context.set('mailWorkspace', result.workspace)
+      context.header('X-Workspace-Identity', session.user.id)
+      context.header('X-Workspace-Id', result.workspace.id)
+      context.header('Cache-Control', 'private, no-store')
     } catch {
       return problemDetailsResponse(context, {
         title: 'Service unavailable',

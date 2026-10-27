@@ -79,13 +79,14 @@ export const sentEmailsRoute = createRoute({
   method: 'get',
   path: '/api/v1/mail/sent',
   tags: ['Mail'],
-  summary: 'List the current user sent emails',
+  summary: 'List the current user sent emails in the authorized workspace',
   request: {
     query: z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }),
   },
   responses: {
     200: {
-      description: 'A page of twenty confirmed emails, newest first.',
+      description:
+        'A page of twenty confirmed emails owned by the current user in the authorized workspace, newest first.',
       content: {
         'application/json': {
           schema: z.object({
@@ -120,6 +121,9 @@ export const sentEmailsRoute = createRoute({
     },
     400: errorResponse,
     401: errorResponse,
+    403: errorResponse,
+    409: errorResponse,
+    503: errorResponse,
   },
 })
 
