@@ -1,14 +1,48 @@
 import { randomUUID } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { drizzle } from 'drizzle-orm/node-postgres'
+import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { createApp } from '../../src/app.js'
 import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
 import { testClientIp } from '../../src/modules/identityWorkspace/onboarding/utils/testClientIp.test-support.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
 import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/workspaces/types.js'
+import {
+  assertMailDatabaseRole,
+  createMailMessageRepository,
+} from '../../src/modules/mail/index.js'
+import { inWorkspaceTransaction } from '../../src/modules/mail/infrastructure/database/workspaceTransaction.js'
+import { seedMail } from '../../src/modules/mail/seed/seedMail.js'
 import { createTelemetryFixture } from './telemetryFixture.js'
 
 const fixture = await createWorkspaceTestFixture()
+await migrate(drizzle(fixture.admin), {
+  migrationsFolder: './database/migrations/mail',
+  migrationsSchema: 'mail_migrations',
+  migrationsTable: '__drizzle_migrations',
+})
+await fixture.admin.query(
+  'GRANT USAGE ON SCHEMA mail TO workspace_test_app; GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO workspace_test_app',
+)
+await assertMailDatabaseRole(fixture.pool)
+for (const [workspaceId, name] of [
+  [fixture.acme, 'Acme'],
+  [fixture.northwind, 'Northwind'],
+] as const) {
+  await seedMail(fixture.pool, workspaceId)
+  await inWorkspaceTransaction(fixture.pool, workspaceId, (client) =>
+    client.query(
+      'INSERT INTO mail.message(id,workspace_id,sender_name,subject,body,received_at) VALUES($1,$2,$3,$4,$5,now())',
+      [
+        randomUUID(),
+        workspaceId,
+        `${name} Sender`,
+        `${name} private message`,
+        `Confidential ${name} content`,
+      ],
+    ),
+  )
+}
 const port = 3003
 const host = `${fixture.acmeSlug}.workspace.test`
 const targetHost = `${fixture.northwindSlug}.workspace.test`
@@ -52,7 +86,7 @@ await fixture.admin.query('update identity_workspace."user" set email_verified=t
 let selections = 0
 let failNext = false
 let revokeAfterSelection = false
-let globalMailCalls = 0
+const globalMailCalls = 0
 let failNextBudget = false
 const budget = runtime.workspaces.consumeBudget
 const consumeBudget: DiscoveryBudget = async (actor) => {
@@ -119,12 +153,7 @@ const app = createApp({
       },
     },
   },
-  mailRepository: {
-    findMessages: async () => {
-      globalMailCalls += 1
-      throw new Error('Global mail must never be loaded')
-    },
-  },
+  mailRepository: createMailMessageRepository(fixture.pool),
 })
 // This server is loopback-only, requires the isolated test DB, and is not built/deployed.
 app.get('/__telemetry', (context) => {
@@ -220,6 +249,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
           `workspace-discovery:${emptyUser.user.id}`,
         ])
         await telemetry.observability.shutdown()
+        await fixture.admin.query('DELETE FROM mail.message WHERE workspace_id=ANY($1::text[])', [
+          [fixture.acme, fixture.northwind],
+        ])
         await fixture.close()
         process.exit(0)
       })()
