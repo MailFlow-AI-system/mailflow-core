@@ -12,6 +12,7 @@ export type AttachmentMetadata = {
 export type AttachmentRecord = AttachmentMetadata & {
   id: string
   userId: string
+  workspaceId: string | null
   status: AttachmentStatus
   temporaryKey: string
   finalKey: string | null
@@ -25,15 +26,19 @@ export type AttachmentView = Omit<AttachmentRecord, 'status'> & {
   associated: boolean
 }
 export type AttachmentRepository = {
-  create: (record: AttachmentRecord) => Promise<AttachmentRecord>
-  get: (userId: string, id: string) => Promise<AttachmentRecord | null>
-  isAssociated: (userId: string, id: string) => Promise<boolean>
-  isFinalKeyReferenced: (key: string) => Promise<boolean>
+  create: (record: AttachmentRecord & MailContext) => Promise<AttachmentRecord>
+  get: (context: MailContext, id: string) => Promise<AttachmentRecord | null>
+  isAssociated: (context: MailContext, id: string) => Promise<boolean>
+  isFinalKeyReferenced: (key: string, workspaceId?: string) => Promise<boolean>
   claimExpired: (limit: number, token: string) => Promise<AttachmentRecord[]>
-  deleteClaimed: (userId: string, id: string, token: string) => Promise<boolean>
-  claimCompletion: (userId: string, id: string, token: string) => Promise<AttachmentRecord | null>
+  deleteClaimed: (context: MailContext, id: string, token: string) => Promise<boolean>
+  claimCompletion: (
+    context: MailContext,
+    id: string,
+    token: string,
+  ) => Promise<AttachmentRecord | null>
   finishCompletion: (
-    userId: string,
+    context: MailContext,
     id: string,
     token: string,
     patch: Pick<AttachmentRecord, 'status' | 'finalKey' | 'rejectionReason'>,
@@ -54,3 +59,5 @@ export type ObjectStorage = {
   read: (key: string, expectedContentType?: string) => Promise<Buffer>
   delete: (key: string) => Promise<void>
 }
+
+import type { MailContext } from '../context/types.js'

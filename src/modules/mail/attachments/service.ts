@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { assertMailContext, type MailContext } from '../context/types.js'
 import { UnsupportedArchiveError, validateArchives } from './archiveValidation.js'
+import { finalAttachmentKey, temporaryAttachmentKey } from './attachmentKeys.js'
 import { validImageContent } from './imageValidation.js'
 import {
   type AttachmentMetadata,
@@ -17,10 +19,11 @@ export function createAttachmentService({
   storage: ObjectStorage
 }) {
   let activeCompletions = 0
-  async function getView(userId: string, id: string): Promise<AttachmentView | null> {
-    const record = await repository.get(userId, id)
+  async function getView(context: MailContext, id: string): Promise<AttachmentView | null> {
+    assertMailContext(context)
+    const record = await repository.get(context, id)
     if (!record || record.status === 'deleting') return null
-    const associated = await repository.isAssociated(userId, id)
+    const associated = await repository.isAssociated(context, id)
     return {
       ...record,
       associated,
@@ -28,14 +31,14 @@ export function createAttachmentService({
     }
   }
   return {
-    async create(userId: string, metadata: AttachmentMetadata) {
+    async create(context: MailContext, metadata: AttachmentMetadata) {
       const id = randomUUID()
-      const owner = createHash('sha256').update(userId).digest('hex')
-      const temporaryKey = `pending/owners/${owner}/${id}`
+      assertMailContext(context)
+      const temporaryKey = temporaryAttachmentKey(context, id)
       await repository.create({
         ...metadata,
         id,
-        userId,
+        ...context,
         temporaryKey,
         finalKey: null,
         status: 'pending',
@@ -52,11 +55,11 @@ export function createAttachmentService({
         expiresAt: signed.expiresAt.toISOString(),
       }
     },
-    async get(userId: string, id: string) {
-      return getView(userId, id)
+    async get(context: MailContext, id: string) {
+      return getView(context, id)
     },
-    async download(userId: string, id: string) {
-      const record = await getView(userId, id)
+    async download(context: MailContext, id: string) {
+      const record = await getView(context, id)
       if (record?.status !== 'clean' || !record.finalKey) return null
       const bytes = await storage.read(record.finalKey, record.contentType)
       if (
@@ -66,11 +69,11 @@ export function createAttachmentService({
         throw new Error('Invalid attachment content')
       return bytes
     },
-    async complete(userId: string, id: string) {
+    async complete(context: MailContext, id: string) {
       if (activeCompletions >= 2) throw new Error('Attachment verification is busy')
       activeCompletions++
       try {
-        const existing = await getView(userId, id)
+        const existing = await getView(context, id)
         if (!existing) throw new Error('Attachment not found')
         if (
           existing.status === 'clean' ||
@@ -79,14 +82,14 @@ export function createAttachmentService({
         )
           return existing
         const token = randomUUID()
-        const record = await repository.claimCompletion(userId, id, token)
-        if (!record) return (await repository.get(userId, id)) ?? existing
-        const finalKey = `${record.temporaryKey.replace(/^pending\//, 'objects/')}/${randomUUID()}`
+        const record = await repository.claimCompletion(context, id, token)
+        if (!record) return (await repository.get(context, id)) ?? existing
+        const finalKey = finalAttachmentKey(context, id, randomUUID())
         const finish = async (
           status: 'clean' | 'rejected' | 'error',
           rejectionReason: string | null = null,
         ) =>
-          repository.finishCompletion(userId, id, token, {
+          repository.finishCompletion(context, id, token, {
             status,
             finalKey: status === 'clean' ? finalKey : null,
             rejectionReason,
@@ -101,7 +104,7 @@ export function createAttachmentService({
             await storage.delete(finalKey)
             return (
               (await finish('rejected', 'checksum_mismatch')) ??
-              (await repository.get(userId, id)) ??
+              (await repository.get(context, id)) ??
               record
             )
           }
@@ -114,13 +117,13 @@ export function createAttachmentService({
                 'rejected',
                 error instanceof UnsupportedArchiveError ? 'unsupported_archive' : 'unsafe_archive',
               )) ??
-              (await repository.get(userId, id)) ??
+              (await repository.get(context, id)) ??
               record
             )
           }
           const saved = await finish('clean')
           if (!saved) await storage.delete(finalKey)
-          return saved ?? (await repository.get(userId, id)) ?? record
+          return saved ?? (await repository.get(context, id)) ?? record
         } catch (error) {
           await storage.delete(finalKey).catch(() => {})
           return (
@@ -128,7 +131,7 @@ export function createAttachmentService({
               error instanceof AttachmentMismatchError ? 'rejected' : 'error',
               error instanceof AttachmentMismatchError ? 'checksum_mismatch' : null,
             )) ??
-            (await repository.get(userId, id)) ??
+            (await repository.get(context, id)) ??
             record
           )
         }
@@ -137,9 +140,10 @@ export function createAttachmentService({
       }
     },
     async resolveReferences(
-      userId: string,
+      context: MailContext,
       refs: { id: string; contentId?: string | undefined }[],
     ) {
+      assertMailContext(context)
       if (refs.length > 10 || new Set(refs.map((ref) => ref.id)).size !== refs.length)
         throw new Error('Invalid attachment references')
       const cids = refs.flatMap((ref) => (ref.contentId ? [ref.contentId] : []))
@@ -147,7 +151,7 @@ export function createAttachmentService({
       let total = 0
       return Promise.all(
         refs.map(async (ref) => {
-          const record = await repository.get(userId, ref.id)
+          const record = await repository.get(context, ref.id)
           if (record?.status !== 'clean' || !record.finalKey)
             throw new Error('Attachment unavailable')
           total += record.size

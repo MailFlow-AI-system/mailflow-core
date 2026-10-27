@@ -20,6 +20,7 @@ export const attachments = mailSchema.table(
   {
     id: uuid('id').notNull(),
     userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
     filename: text('filename').notNull(),
     contentType: text('content_type').notNull(),
     size: bigint('size', { mode: 'number' }).notNull(),
@@ -37,6 +38,8 @@ export const attachments = mailSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.id] }),
+    uniqueIndex('attachment_workspace_identity_idx').on(table.workspaceId, table.userId, table.id),
+    check('attachment_workspace_required', sql`${table.workspaceId} is not null`),
     uniqueIndex('attachment_temporary_key_idx').on(table.temporaryKey),
     uniqueIndex('attachment_final_key_idx').on(table.finalKey),
     index('attachment_expiry_idx').on(table.expiresAt, table.status),
@@ -57,6 +60,7 @@ export const outgoingEmailAttachments = mailSchema.table(
   'outgoing_email_attachment',
   {
     userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
     messageId: uuid('message_id').notNull(),
     attachmentId: uuid('attachment_id').notNull(),
     position: integer('position').notNull(),
@@ -69,6 +73,21 @@ export const outgoingEmailAttachments = mailSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.messageId, table.position] }),
+    check('outgoing_attachment_workspace_required', sql`${table.workspaceId} is not null`),
+    uniqueIndex('outgoing_attachment_workspace_identity_idx').on(
+      table.workspaceId,
+      table.userId,
+      table.messageId,
+      table.attachmentId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.userId, table.messageId],
+      foreignColumns: [outgoingEmails.workspaceId, outgoingEmails.userId, outgoingEmails.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.workspaceId, table.userId, table.attachmentId],
+      foreignColumns: [attachments.workspaceId, attachments.userId, attachments.id],
+    }).onDelete('restrict'),
     uniqueIndex('outgoing_attachment_identity_idx').on(
       table.userId,
       table.messageId,

@@ -17,6 +17,12 @@ export { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 export { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
 export { createWorkspaceEntryRoutes } from './workspaces/entryRoute.js'
 export type { WorkspaceEntryDependencies } from './workspaces/entryTypes.js'
+export type {
+  MailWorkspaceAuthority,
+  MailWorkspaceResolution,
+  MailWorkspaceSelection,
+} from './workspaces/mailWorkspaceAuthority.js'
+export { createMailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
 export { createWorkspaceRoutes } from './workspaces/route.js'
 export {
   workspaceLocalSwitchingEnabled,
@@ -28,6 +34,7 @@ export type {
   WorkspaceReader,
   WorkspaceRouteDependencies,
   WorkspaceSelectionDependencies,
+  WorkspaceSummary,
 } from './workspaces/types.js'
 export { createWorkspaceEntryReader } from './workspaces/workspaceEntryReader.js'
 export { createWorkspaceReader } from './workspaces/workspaceReader.js'

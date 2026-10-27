@@ -24,6 +24,7 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
       allowHeaders: [
         'Content-Type',
         'X-Workspace-Identity',
+        'X-Workspace-Id',
         'traceparent',
         'tracestate',
         ...(onboarding ? ['Idempotency-Key'] : []),

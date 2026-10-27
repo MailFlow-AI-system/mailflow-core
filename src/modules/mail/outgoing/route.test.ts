@@ -43,6 +43,17 @@ function setup(authenticated = true, workspace = false) {
           authenticated ? { session: { id: 'session' }, user: { id: 'owner' } } : null,
       },
     },
+    mailWorkspaceAuthority: {
+      resolve: vi.fn(async () => ({
+        status: 'ok' as const,
+        workspace: {
+          id: 'workspace-a',
+          name: 'Workspace',
+          slug: 'workspace-a',
+          role: 'owner' as const,
+        },
+      })),
+    },
     allowedAuthOrigins: ['https://mail.example.test'],
     outgoingMail,
     ...(workspace ? { workspaces: { reader: {} as never, consumeBudget: vi.fn() } } : {}),
@@ -82,6 +93,7 @@ describe('outgoing mail HTTP', () => {
     { ...input, to: [], cc: [], bcc: [] },
     { ...input, to: ['bad'] },
     { ...input, from: 'spoof@example.test' },
+    { ...input, workspaceId: 'spoof-workspace' },
     { ...input, attachments: [{ filename: 'hello.txt', content: 'invalid base64!' }] },
     { ...input, to: Array(51).fill('ada@example.test') },
   ])('rejects invalid send input without delivery', async (body) => {
@@ -106,10 +118,11 @@ describe('outgoing mail HTTP', () => {
     expect(outgoingMail.repository.listSent).toHaveBeenCalledWith('owner', 20)
     expect((await app.request('/api/v1/mail/sent?offset=-1')).status).toBe(400)
   })
-  it('preserves workspace isolation', async () => {
-    const { send, outgoingMail } = setup(true, true)
-    expect((await send()).status).toBe(503)
-    expect(outgoingMail.deliver).not.toHaveBeenCalled()
+  it('authorizes scoped writes while retaining the legacy list guard', async () => {
+    const { send, app, outgoingMail } = setup(true, true)
+    expect((await send()).status).toBe(200)
+    expect(outgoingMail.deliver).toHaveBeenCalledOnce()
+    expect((await app.request('/api/v1/mail/sent')).status).toBe(503)
   })
 })
 

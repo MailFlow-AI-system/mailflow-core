@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Client, Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { MailContext } from '../context/types.js'
 import { createAttachmentRepository } from '../infrastructure/database/attachmentRepository.js'
 import { createOutgoingRepository } from '../infrastructure/database/outgoingRepository.js'
 import { attachments } from '../infrastructure/database/schema/attachments.js'
@@ -18,12 +19,16 @@ integration('attachment PostgreSQL persistence', () => {
   const database = drizzle({ client: pool })
   const owner = `storage-persistence-${randomUUID()}`
   const foreignOwner = `storage-foreign-${randomUUID()}`
+  const context = (userId = owner, workspaceId = 'workspace-a') => ({ userId, workspaceId })
   const finalKey = (suffix: string) => `objects/${owner}/${suffix}`
   const repository = createAttachmentRepository(database)
   const outgoing = createOutgoingRepository(database)
-  const record = (patch: Partial<AttachmentRecord> = {}): AttachmentRecord => ({
+  const record = (
+    patch: Partial<AttachmentRecord & MailContext> = {},
+  ): AttachmentRecord & MailContext => ({
     id: randomUUID(),
     userId: owner,
+    workspaceId: 'workspace-a',
     filename: 'hello.txt',
     contentType: 'text/plain',
     size: 5,
@@ -57,16 +62,74 @@ integration('attachment PostgreSQL persistence', () => {
     await expect(repository.create(record({ size: 10_000_001 }))).rejects.toThrow()
   })
 
+  it('isolates attachment lookup, completion and associations across workspaces for the same owner', async () => {
+    const row = await repository.create(record())
+    const foreignScope = context(owner, 'workspace-b')
+    expect(await repository.get(foreignScope, row.id)).toBeNull()
+    expect(await repository.claimCompletion(foreignScope, row.id, 'foreign')).toBeNull()
+    expect(await repository.isAssociated(foreignScope, row.id)).toBe(false)
+    await repository.claimCompletion(context(), row.id, 'owner')
+    expect(
+      await repository.finishCompletion(foreignScope, row.id, 'owner', {
+        status: 'clean',
+        finalKey: finalKey('cross-workspace'),
+        rejectionReason: null,
+      }),
+    ).toBeNull()
+    await repository.finishCompletion(context(), row.id, 'owner', {
+      status: 'clean',
+      finalKey: finalKey('cross-workspace'),
+      rejectionReason: null,
+    })
+    await expect(
+      outgoing.reserve({
+        ...foreignScope,
+        id: randomUUID(),
+        deliveryKey: 'foreign',
+        payloadHash: 'foreign',
+        to: ['ada@example.test'],
+        cc: [],
+        bcc: [],
+        subject: 'Foreign',
+        html: 'Foreign',
+        text: 'Foreign',
+        attachments: [{ id: row.id }],
+      }),
+    ).rejects.toThrow('unavailable')
+    const foreignMessageId = randomUUID()
+    await outgoing.reserve({
+      ...foreignScope,
+      id: foreignMessageId,
+      deliveryKey: 'foreign-empty',
+      payloadHash: 'foreign-empty',
+      to: ['ada@example.test'],
+      cc: [],
+      bcc: [],
+      subject: 'Foreign',
+      html: 'Foreign',
+      text: 'Foreign',
+      attachments: [],
+    })
+    await expect(
+      client.query(
+        `INSERT INTO mail.outgoing_email_attachment
+      (workspace_id,user_id,message_id,attachment_id,position,filename,content_type,size,sha256,object_key)
+      VALUES ('workspace-b',$1,$2,$3,0,'hello.txt','text/plain',5,$4,$5)`,
+        [owner, foreignMessageId, row.id, row.sha256, finalKey('cross-workspace')],
+      ),
+    ).rejects.toThrow('foreign key')
+  })
+
   it('keeps metadata owner-scoped and only permits one unexpired completion lease', async () => {
     const row = await repository.create(record())
-    expect(await repository.get(foreignOwner, row.id)).toBeNull()
-    expect(await repository.claimCompletion(foreignOwner, row.id, 'wrong')).toBeNull()
-    expect(await repository.claimCompletion(row.userId, row.id, 'first')).toMatchObject({
+    expect(await repository.get(context(foreignOwner), row.id)).toBeNull()
+    expect(await repository.claimCompletion(context(foreignOwner), row.id, 'wrong')).toBeNull()
+    expect(await repository.claimCompletion(context(row.userId), row.id, 'first')).toMatchObject({
       claimToken: 'first',
     })
-    expect(await repository.claimCompletion(row.userId, row.id, 'second')).toBeNull()
+    expect(await repository.claimCompletion(context(row.userId), row.id, 'second')).toBeNull()
     expect(
-      await repository.finishCompletion(row.userId, row.id, 'wrong', {
+      await repository.finishCompletion(context(row.userId), row.id, 'wrong', {
         status: 'clean',
         finalKey: finalKey('wrong'),
         rejectionReason: null,
@@ -76,34 +139,34 @@ integration('attachment PostgreSQL persistence', () => {
 
   it('recovers an expired completion lease and prevents stale publication or later mutation', async () => {
     const row = await repository.create(record())
-    await repository.claimCompletion(row.userId, row.id, 'first')
+    await repository.claimCompletion(context(row.userId), row.id, 'first')
     await client.query(
       "UPDATE mail.attachment SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
       [row.id],
     )
     expect(
-      await repository.finishCompletion(row.userId, row.id, 'first', {
+      await repository.finishCompletion(context(row.userId), row.id, 'first', {
         status: 'clean',
         finalKey: finalKey('stale'),
         rejectionReason: null,
       }),
     ).toBeNull()
-    expect(await repository.claimCompletion(row.userId, row.id, 'second')).toBeTruthy()
+    expect(await repository.claimCompletion(context(row.userId), row.id, 'second')).toBeTruthy()
     expect(
-      await repository.finishCompletion(row.userId, row.id, 'first', {
+      await repository.finishCompletion(context(row.userId), row.id, 'first', {
         status: 'error',
         finalKey: null,
         rejectionReason: null,
       }),
     ).toBeNull()
     expect(
-      await repository.finishCompletion(row.userId, row.id, 'second', {
+      await repository.finishCompletion(context(row.userId), row.id, 'second', {
         status: 'clean',
         finalKey: finalKey('clean'),
         rejectionReason: null,
       }),
     ).toMatchObject({ status: 'clean', finalKey: finalKey('clean'), claimToken: null })
-    expect(await repository.claimCompletion(row.userId, row.id, 'third')).toBeNull()
+    expect(await repository.claimCompletion(context(row.userId), row.id, 'third')).toBeNull()
     expect(await repository.isFinalKeyReferenced(finalKey('clean'))).toBe(true)
     expect(await repository.isFinalKeyReferenced(finalKey('missing'))).toBe(false)
   })
@@ -112,10 +175,10 @@ integration('attachment PostgreSQL persistence', () => {
     const row = await repository.create(record({ expiresAt: new Date(Date.now() - 1_000) }))
     const claimed = await repository.claimExpired(100, 'cleanup')
     expect(claimed).toContainEqual(expect.objectContaining({ id: row.id, status: 'deleting' }))
-    expect(await repository.get(row.userId, row.id)).toBeNull()
-    expect(await repository.claimCompletion(row.userId, row.id, 'verify')).toBeNull()
-    expect(await repository.deleteClaimed(row.userId, row.id, 'wrong')).toBe(false)
-    expect(await repository.deleteClaimed(row.userId, row.id, 'cleanup')).toBe(true)
+    expect(await repository.get(context(row.userId), row.id)).toBeNull()
+    expect(await repository.claimCompletion(context(row.userId), row.id, 'verify')).toBeNull()
+    expect(await repository.deleteClaimed(context(row.userId), row.id, 'wrong')).toBe(false)
+    expect(await repository.deleteClaimed(context(row.userId), row.id, 'cleanup')).toBe(true)
   })
 
   it('rechecks an association committed after the cleanup query snapshot before claiming its object', async () => {
@@ -154,14 +217,14 @@ integration('attachment PostgreSQL persistence', () => {
       )
       const messageId = randomUUID()
       await client.query(
-        `INSERT INTO mail.outgoing_email (user_id, id, payload_hash, "to", cc, bcc, subject, html, text)
-         VALUES ($1, $2, 'snapshot-race', '["ada@example.test"]', '[]', '[]', 'Hello', '<p>Hello</p>', 'Hello')`,
+        `INSERT INTO mail.outgoing_email (workspace_id, user_id, id, payload_hash, "to", cc, bcc, subject, html, text)
+         VALUES ('workspace-a', $1, $2, 'snapshot-race', '["ada@example.test"]', '[]', '[]', 'Hello', '<p>Hello</p>', 'Hello')`,
         [owner, messageId],
       )
       await client.query(
         `INSERT INTO mail.outgoing_email_attachment
-         (user_id, message_id, attachment_id, position, filename, content_type, size, sha256, object_key)
-         VALUES ($1, $2, $3, 0, 'hello.txt', 'text/plain', 5, $4, $5)`,
+         (workspace_id, user_id, message_id, attachment_id, position, filename, content_type, size, sha256, object_key)
+         VALUES ('workspace-a', $1, $2, $3, 0, 'hello.txt', 'text/plain', 5, $4, $5)`,
         [owner, messageId, row.id, row.sha256, row.finalKey],
       )
       const cleanup = gatedRepository.claimExpired(100, 'snapshot-cleanup')
@@ -182,8 +245,8 @@ integration('attachment PostgreSQL persistence', () => {
       const claimed = await cleanup
       expect(blocked).toBe(true)
       expect(claimed).not.toContainEqual(expect.objectContaining({ id: row.id }))
-      expect(await repository.get(owner, row.id)).toMatchObject({ status: 'clean' })
-      expect(await repository.isAssociated(owner, row.id)).toBe(true)
+      expect(await repository.get(context(owner), row.id)).toMatchObject({ status: 'clean' })
+      expect(await repository.isAssociated(context(owner), row.id)).toBe(true)
     } finally {
       await client.query('ROLLBACK')
       await client.query('SELECT pg_advisory_unlock_all()')
@@ -199,9 +262,11 @@ integration('attachment PostgreSQL persistence', () => {
         rejectionReason: null,
       }),
     )
-    expect(await repository.isAssociated(row.userId, row.id)).toBe(false)
+    expect(await repository.isAssociated(context(row.userId), row.id)).toBe(false)
     const input = {
       userId: row.userId,
+      workspaceId: 'workspace-a',
+      deliveryKey: 'test-delivery-key',
       id: randomUUID(),
       payloadHash: 'bound',
       to: ['ada@example.test'],
@@ -213,8 +278,8 @@ integration('attachment PostgreSQL persistence', () => {
       attachments: [{ id: row.id }],
     }
     await outgoing.reserve(input)
-    expect(await repository.isAssociated(row.userId, row.id)).toBe(true)
-    expect(await repository.isAssociated(foreignOwner, row.id)).toBe(false)
+    expect(await repository.isAssociated(context(row.userId), row.id)).toBe(true)
+    expect(await repository.isAssociated(context(foreignOwner), row.id)).toBe(false)
     await client.query(
       "UPDATE mail.attachment SET expires_at = now() - interval '1 second' WHERE id = $1",
       [row.id],
@@ -222,14 +287,16 @@ integration('attachment PostgreSQL persistence', () => {
     expect(await repository.claimExpired(100, 'cleanup')).not.toContainEqual(
       expect.objectContaining({ id: row.id }),
     )
-    await outgoing.markSent(row.userId, input.id, 'provider')
+    await outgoing.markSent(context(row.userId), input.id, 'provider')
     const [message] = await outgoing.listSent(row.userId, 0)
     expect(message?.attachments).toContainEqual(
       expect.objectContaining({ id: row.id, filename: 'hello.txt', size: 5 }),
     )
     expect(message?.attachments?.[0]).not.toHaveProperty('objectKey')
-    expect(await outgoing.findSent?.(foreignOwner, input.id)).toBeNull()
-    expect(await outgoing.findSent?.(row.userId, input.id)).toMatchObject({ html: '<p>Hello</p>' })
+    expect(await outgoing.findSent?.(context(foreignOwner), input.id)).toBeNull()
+    expect(await outgoing.findSent?.(context(row.userId), input.id)).toMatchObject({
+      html: '<p>Hello</p>',
+    })
     expect(await outgoing.reserve(input)).toMatchObject({ payloadHash: 'bound' })
   })
 
@@ -266,6 +333,8 @@ integration('attachment PostgreSQL persistence', () => {
       await expect(
         outgoing.reserve({
           userId: owner,
+          workspaceId: 'workspace-a',
+          deliveryKey: 'test-delivery-key',
           id,
           payloadHash: 'invalid',
           to: ['ada@example.test'],
@@ -308,6 +377,8 @@ integration('attachment PostgreSQL persistence', () => {
     )
     const input = {
       userId: owner,
+      workspaceId: 'workspace-a',
+      deliveryKey: 'test-delivery-key',
       id: randomUUID(),
       payloadHash: 'same',
       to: ['ada@example.test'],
@@ -340,7 +411,7 @@ integration('attachment PostgreSQL persistence', () => {
     expect(await repository.claimExpired(100, 'new-cleanup')).toContainEqual(
       expect.objectContaining({ id: row.id, claimToken: 'new-cleanup' }),
     )
-    expect(await repository.deleteClaimed(owner, row.id, 'old-cleanup')).toBe(false)
-    expect(await repository.deleteClaimed(owner, row.id, 'new-cleanup')).toBe(true)
+    expect(await repository.deleteClaimed(context(owner), row.id, 'old-cleanup')).toBe(false)
+    expect(await repository.deleteClaimed(context(owner), row.id, 'new-cleanup')).toBe(true)
   })
 })

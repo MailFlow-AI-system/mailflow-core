@@ -17,14 +17,28 @@ policy at `/lifecycle`, and `managedDomain.json` at `/domains/managed`. Read eac
 configuration back afterward. Authentication belongs in the operator session;
 credentials must never be written into these files.
 
-The browser can upload through signed PUT requests from the listed origins. File
-reads pass through authenticated Core download routes. Local origins enumerate
-ports explicitly because R2 does not support port wildcards; add a deliberate
-origin when using another development port.
+The browser uploads through signed PUT requests. Development permits `*` CORS
+for arbitrary local ports; staging and production retain exact Web origins.
+This does not publish the buckets or remove the signed-URL requirement. Web's
+standard development port is 3000 with `strictPort`, so a busy port reports an
+error rather than silently selecting another port.
 
-Only `pending/` objects expire after one day. Never apply a blanket expiration to
-`objects/`: those objects may back immutable sent-message attachments. Core's
-attachment cleanup command handles unassociated metadata and orphan final objects.
+Object keys belong to a workspace and Mail purpose:
+
+```text
+uploads/{workspaceId}/mail/attachments/{attachmentId}
+workspaces/{workspaceId}/mail/attachments/{attachmentId}/{versionId}
+```
+
+The workspace segment is encoded; names and original filenames stay in metadata.
+Unique final versions preserve immutable completion and retry safety. Core checks
+both workspace membership and owner access before signing or reading a file.
+
+Only `uploads/` and legacy `pending/` objects expire after one day. Never apply a
+blanket expiration to `workspaces/` or legacy `objects/`: those keys may back sent
+messages. Core's cleanup handles unassociated metadata and old orphan final
+objects, recognizes only Mail key shapes, and preserves referenced legacy files.
+Existing objects are not moved or assigned to guessed workspaces by this change.
 
 Store `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and
 `R2_SECRET_ACCESS_KEY` under `/mailflow-core` in each matching Infisical environment.
@@ -37,7 +51,11 @@ repository files, and command output.
 ## Listening
 
 Environment buckets and bucket-scoped runtime credentials prevent an application
-from selecting another environment's files. Private buckets plus owner checks in
+from selecting another environment's files. Private buckets plus workspace membership and owner checks in
 Core preserve access control; a CORS allowlist is not object authorization. Uploads
 use temporary keys and verified server-only immutable copies so replaying a PUT
 cannot change bytes that were verified or attached to a sent message.
+
+Legacy list query isolation is owned by a separate task. Current context checks
+protect sending and attachment access; they do not broaden workspace members'
+visibility or imply that the existing list reads are already tenant-isolated.
