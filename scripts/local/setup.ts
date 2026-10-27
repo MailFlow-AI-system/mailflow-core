@@ -16,7 +16,7 @@ try {
   END $$;
   GRANT USAGE ON SCHEMA identity_workspace, mail TO mailflow_app;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace TO mailflow_app;
-  GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO mailflow_app;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mail TO mailflow_app;
   GRANT EXECUTE ON FUNCTION identity_workspace.select_workspace_preference(text) TO mailflow_app;`)
   console.info(
     'Local mailflow_app grants applied. Use DATABASE_URL with mailflow_app; keep DIRECT_URL on mailflow.',

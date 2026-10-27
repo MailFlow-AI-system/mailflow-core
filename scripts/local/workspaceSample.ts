@@ -20,7 +20,7 @@ try {
   await createSampleWorkspace(pool, { id: workspaceId, name: 'Acme Local', slug, ownerId: user.id })
   console.info(
     JSON.stringify(
-      { host: `http://${slug}.workspace.test:3000`, email, password, workspaceId },
+      { host: `http://${slug}.localhost:3000`, email, password, workspaceId },
       null,
       2,
     ),
