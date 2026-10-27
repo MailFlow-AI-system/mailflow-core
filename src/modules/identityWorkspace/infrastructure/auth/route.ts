@@ -30,7 +30,7 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
         ...(onboarding ? ['Idempotency-Key'] : []),
       ],
       allowMethods: ['GET', 'POST', 'OPTIONS'],
-      exposeHeaders: ['X-Workspace-Identity', 'Retry-After'],
+      exposeHeaders: ['X-Workspace-Identity', 'X-Workspace-Id', 'Retry-After'],
     }),
   )
 

@@ -61,6 +61,6 @@ Core preserve access control; a CORS allowlist is not object authorization. Uplo
 use temporary keys and verified server-only immutable copies so replaying a PUT
 cannot change bytes that were verified or attached to a sent message.
 
-Legacy list query isolation is owned by a separate task. Current context checks
-protect sending and attachment access; they do not broaden workspace members'
-visibility or imply that the existing list reads are already tenant-isolated.
+Inbox uses the workspace isolation integrated from development. Sent reads and
+attachment metadata now require both the authorized workspace and the original
+sender; workspace membership does not expose another member's sent messages.

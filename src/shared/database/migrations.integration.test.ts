@@ -150,7 +150,7 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
     }
   })
 
-  it('preserves unmapped legacy Mail rows and rejects new unscoped writes without changing listings', async () => {
+  it('preserves unmapped legacy Mail rows, excludes them from scoped Sent and rejects unscoped writes', async () => {
     const environment = await createTestDatabase()
     const client = await connect(environment)
     try {
@@ -190,17 +190,28 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
         '../../modules/mail/infrastructure/database/attachmentRepository.js'
       )
       const database = drizzle({ client })
-      expect(await createOutgoingRepository(database).listSent('legacy-owner', 0)).toContainEqual(
-        expect.objectContaining({ id, subject: 'Legacy' }),
-      )
+      expect(
+        await createOutgoingRepository(database).listSent(
+          { userId: 'legacy-owner', workspaceId: 'workspace-a' },
+          0,
+        ),
+      ).toEqual([])
       expect(
         (
           await client.query(
-            'SELECT workspace_id, delivery_key FROM mail.outgoing_email WHERE id=$1',
+            'SELECT workspace_id, delivery_key, subject, html, text FROM mail.outgoing_email WHERE id=$1',
             [id],
           )
         ).rows,
-      ).toEqual([{ workspace_id: null, delivery_key: null }])
+      ).toEqual([
+        {
+          workspace_id: null,
+          delivery_key: null,
+          subject: 'Legacy',
+          html: 'Legacy',
+          text: 'Legacy',
+        },
+      ])
       const repository = createAttachmentRepository(database)
       expect(
         await repository.get({ userId: 'legacy-owner', workspaceId: 'unrelated' }, id),

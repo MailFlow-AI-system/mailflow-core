@@ -36,5 +36,6 @@ by a migration that was executed before this reconciliation.
 
 The reconciliation preserves both legitimate histories instead of resetting the
 ledger or replaying the destructive Inbox migration. Legacy messages remain
-unassigned and inaccessible until ownership is explicitly established. Unknown
-histories block deployment for investigation rather than being silently skipped.
+unassigned and inaccessible until ownership is explicitly established. Historical Sent rows without a workspace also remain stored, but scoped reads
+exclude them until ownership is verified. Unknown histories block deployment for
+investigation rather than being silently skipped.

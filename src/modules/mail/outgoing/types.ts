@@ -54,7 +54,7 @@ export type OutgoingRepository = {
   cleanupAbandoned: () => Promise<number>
   discard: (context: MailContext, input: DiscardInput) => Promise<DiscardResult>
   markSent: (context: MailContext, id: string, providerId: string) => Promise<void>
-  listSent: (userId: string, offset: number) => Promise<SentEmail[]>
+  listSent: (context: MailContext, offset: number) => Promise<SentEmail[]>
   findSent?: (context: MailContext, id: string) => Promise<(SentEmail & { html: string }) | null>
 }
 export type OutgoingMail = {
