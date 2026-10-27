@@ -8,6 +8,13 @@
       "when": 1790883059340,
       "tag": "0000_add_global_inbox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793025084417,
+      "tag": "0001_workspace_inbox",
+      "breakpoints": true
     }
   ]
 }
