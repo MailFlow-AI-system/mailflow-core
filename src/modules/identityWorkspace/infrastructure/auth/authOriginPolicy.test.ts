@@ -167,3 +167,29 @@ it('allows the workspace selector for trusted Mail preflight only', async () => 
   const rejected = await request('https://evil.example.com')
   expect(rejected.headers.get('access-control-allow-origin')).toBeNull()
 })
+
+it('accepts single-label localhost tenants only with local API and Web configuration', () => {
+  const config = loadAuthConfig({
+    APP_ENV: 'development',
+    BETTER_AUTH_SECRET: 'local-test-secret-01234567890123456789',
+    BETTER_AUTH_URL: 'http://localhost:8080',
+    SITE_URL: 'http://localhost:4321',
+    WEB_APP_URL: 'http://localhost:3000',
+    RESEND_API_KEY: 'synthetic',
+    RESEND_FROM_EMAIL: 'noreply@mailflow.invalid',
+  })
+  const policy = createAuthOriginPolicy(config)
+  expect(policy('http://luis-felipe.localhost:3000')).toBe(true)
+  for (const origin of [
+    'http://a.b.localhost:3000',
+    'http://a.localhost:3001',
+    'http://a.localhost.evil.test:3000',
+    'https://a.localhost:3000',
+  ])
+    expect(policy(origin)).toBe(false)
+  expect(
+    createAuthOriginPolicy({ ...config, baseURL: 'https://api.example.com' })(
+      'http://a.localhost:3000',
+    ),
+  ).toBe(false)
+})

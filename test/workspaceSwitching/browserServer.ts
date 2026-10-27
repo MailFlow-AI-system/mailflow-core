@@ -9,11 +9,14 @@ import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/
 import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/workspaces/types.js'
 import {
   assertMailDatabaseRole,
+  createAttachmentRepository,
+  createAttachmentService,
   createMailMessageRepository,
   createOutgoingRepository,
 } from '../../src/modules/mail/index.js'
 import { inWorkspaceTransaction } from '../../src/modules/mail/infrastructure/database/workspaceTransaction.js'
 import { seedMail } from '../../src/modules/mail/seed/seedMail.js'
+import { createFixtureObjectStorage } from './objectStorage.js'
 import { createTelemetryFixture } from './telemetryFixture.js'
 
 const fixture = await createWorkspaceTestFixture()
@@ -77,8 +80,9 @@ async function resetSent() {
 }
 await resetSent()
 const port = 3003
-const host = `${fixture.acmeSlug}.workspace.test`
-const targetHost = `${fixture.northwindSlug}.workspace.test`
+const baseHost = process.env.MAILFLOW_WORKSPACE_TEST_BASE_HOST ?? 'workspace.test'
+const host = `${fixture.acmeSlug}.${baseHost}`
+const targetHost = `${fixture.northwindSlug}.${baseHost}`
 const controlKey = randomUUID()
 const authConfig = {
   ...fixture.authConfig,
@@ -88,7 +92,7 @@ const authConfig = {
     fixture.authConfig.siteURL,
     `http://${host}:${port}`,
     `http://${targetHost}:${port}`,
-    `http://workspace.test:${port}`,
+    `http://${baseHost}:${port}`,
   ],
 }
 const runtime = await createIdentityWorkspaceRuntime({
@@ -130,6 +134,11 @@ const consumeBudget: DiscoveryBudget = async (actor) => {
   return budget(actor)
 }
 const telemetry = await createTelemetryFixture()
+const objectFixture = createFixtureObjectStorage('http://127.0.0.1:8083')
+const attachments = createAttachmentService({
+  repository: createAttachmentRepository(drizzle(fixture.pool)),
+  storage: objectFixture.storage,
+})
 const app = createApp({
   ...runtime,
   config: telemetry.config,
@@ -187,12 +196,28 @@ const app = createApp({
     },
   },
   mailRepository: createMailMessageRepository(fixture.pool),
-  mailWorkspaceBaseOrigin: 'http://workspace.test:3003',
+  mailWorkspaceBaseOrigin: `http://${baseHost}:3003`,
+  attachments,
   outgoingMail: {
+    resolveAttachments: attachments.resolveReferences,
     repository: createOutgoingRepository(drizzle(fixture.pool)),
     // Keep browser acceptance inside the isolated fixture; never call an external provider.
     deliver: async (message) => `fixture-provider-${message.id}`,
   },
+})
+app.all('/__fixture/uploads/:token', async (context) => {
+  const origin = context.req.header('origin') ?? ''
+  if (!runtime.isAllowedAuthOrigin?.(origin)) return context.body(null, 403)
+  context.header('Access-Control-Allow-Origin', origin)
+  context.header('Vary', 'Origin')
+  context.header('Access-Control-Allow-Methods', 'PUT')
+  // The fixture shares Core's origin, where Faro legitimately propagates trace headers.
+  context.header('Access-Control-Allow-Headers', 'content-type,traceparent,tracestate')
+  if (context.req.method === 'OPTIONS') return context.body(null, 204)
+  const response = await objectFixture.upload(context.req.raw)
+  response.headers.set('Access-Control-Allow-Origin', origin)
+  response.headers.set('Vary', 'Origin')
+  return response
 })
 // This server is loopback-only, requires the isolated test DB, and is not built/deployed.
 app.get('/__telemetry', (context) => {
@@ -218,9 +243,9 @@ app.get('/__fixture', async (context) => {
     password: fixture.password,
     targetId: fixture.northwind,
     currentId: fixture.acme,
-    fallbackHost: `${[fixture.acme, fixture.northwind].sort()[0] === fixture.acme ? fixture.acmeSlug : fixture.northwindSlug}.workspace.test`,
+    fallbackHost: `${[fixture.acme, fixture.northwind].sort()[0] === fixture.acme ? fixture.acmeSlug : fixture.northwindSlug}.${baseHost}`,
     unrelatedId: fixture.globex,
-    unrelatedHost: `${fixture.globexSlug}.workspace.test`,
+    unrelatedHost: `${fixture.globexSlug}.${baseHost}`,
     controlKey,
     selections,
     globalMailCalls,
@@ -289,11 +314,14 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
           `workspace-discovery:${emptyUser.user.id}`,
         ])
         await telemetry.observability.shutdown()
-        await fixture.admin.query('DELETE FROM mail.message WHERE workspace_id=ANY($1::text[])', [
-          [fixture.acme, fixture.northwind],
-        ])
         await fixture.admin.query('DELETE FROM mail.outgoing_email WHERE user_id=ANY($1::text[])', [
           [fixture.userId, fixture.otherId],
+        ])
+        await fixture.admin.query('DELETE FROM mail.attachment WHERE user_id=ANY($1::text[])', [
+          [fixture.userId, fixture.otherId],
+        ])
+        await fixture.admin.query('DELETE FROM mail.message WHERE workspace_id=ANY($1::text[])', [
+          [fixture.acme, fixture.northwind],
         ])
         await fixture.close()
         process.exit(0)

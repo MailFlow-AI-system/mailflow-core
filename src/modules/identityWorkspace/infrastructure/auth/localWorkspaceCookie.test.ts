@@ -31,3 +31,15 @@ describe('local workspace cookie policy', () => {
     ).toThrow('isolated')
   })
 })
+
+it('uses host-only cookies for localhost and validates all local origins', () => {
+  const local = {
+    ...config,
+    webAppURL: 'http://localhost:3000',
+    allowedOrigins: ['http://localhost:3000', 'http://localhost:4321'],
+  }
+  expect(localWorkspaceCookie(local, true)).toEqual({ enabled: false })
+  expect(() =>
+    localWorkspaceCookie({ ...local, allowedOrigins: ['http://localhost.evil.test:3000'] }, true),
+  ).toThrow('isolated')
+})

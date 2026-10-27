@@ -33,3 +33,18 @@ Railway validates migration history before API deployments; see [migration polic
 Sending and file access require valid workspace membership, even with workspace UI disabled.
 
 [Architecture](https://mailflow-architecture-hub.vercel.app/) · [R2 setup](infrastructure/r2/README.md)
+
+## Local workspaces
+
+`bun run dev` selects `localhost:3000` and its tenant subdomains. The local runner verifies
+restricted privileges and the current schema first; it never migrates or grants automatically.
+Use `MAILFLOW_LOCAL_PROFILE=false` for an intentional custom profile. See the Web's local guide.
+Shared rollout must apply migrations through 0007 before reviewing the disabled
+[runtime role proposal](infrastructure/database/runtimeRole.sql). Provision its login secret
+securely, update only `DATABASE_URL`, and retain the migration administrator in `DIRECT_URL`.
+
+## Listening
+
+The local runner selects local defaults explicitly because `development` also names a published
+environment. Missing role/schema prerequisites fail startup before activation; RLS guards and
+shared migration history remain authoritative.
