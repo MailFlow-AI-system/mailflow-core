@@ -18,7 +18,8 @@ configuration back afterward. Authentication belongs in the operator session;
 credentials must never be written into these files.
 
 The browser uploads through signed PUT requests. Development permits `*` CORS
-for arbitrary local ports; staging and production retain exact Web origins.
+for arbitrary local ports; staging and production allow only their HTTPS Web base
+and workspace subdomains. Signed uploads still require Core authorization.
 This does not publish the buckets or remove the signed-URL requirement. Web's
 standard development port is 3000 with `strictPort`, so a busy port reports an
 error rather than silently selecting another port.
