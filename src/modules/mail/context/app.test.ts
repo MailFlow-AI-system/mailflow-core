@@ -59,11 +59,11 @@ describe('mail context API', () => {
       ).status,
     ).toBe(503)
   })
-  it('preserves legacy list guard in workspace mode while allowing context', async () => {
+  it('keeps the Sent guard and removes global Inbox while allowing context', async () => {
     const { app } = setup({ workspaceMode: true })
     expect((await app.request('/api/v1/mail/context')).status).toBe(200)
-    expect((await app.request('/api/v1/mail/messages')).status).toBe(503)
-    expect((await app.request('/api/v1/mail/messages', { method: 'HEAD' })).status).toBe(503)
+    expect((await app.request('/api/v1/mail/messages')).status).toBe(404)
+    expect((await app.request('/api/v1/mail/messages', { method: 'HEAD' })).status).toBe(404)
     expect((await app.request('/api/v1/mail/sent')).status).toBe(503)
   })
 })

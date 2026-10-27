@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import type { DeliveryState } from '../../../outgoing/types.js'
 import { mailSchema } from './messages.js'
 
 export const outgoingEmails = mailSchema.table(
@@ -18,6 +19,8 @@ export const outgoingEmails = mailSchema.table(
     userId: text('user_id').notNull(),
     workspaceId: text('workspace_id'),
     deliveryKey: text('delivery_key'),
+    deliveryState: text('delivery_state').$type<DeliveryState>().default('uncertain').notNull(),
+    attemptToken: uuid('attempt_token'),
     payloadHash: text('payload_hash').notNull(),
     to: jsonb('to').$type<string[]>().notNull(),
     cc: jsonb('cc').$type<string[]>().notNull(),
@@ -38,6 +41,10 @@ export const outgoingEmails = mailSchema.table(
       table.id,
     ),
     check('outgoing_email_workspace_required', sql`${table.workspaceId} is not null`),
+    check(
+      'outgoing_email_delivery_state_check',
+      sql`${table.deliveryState} in ('ready', 'rejected', 'uncertain', 'sent', 'discarded')`,
+    ),
     index('outgoing_email_user_sent_idx').on(table.userId, table.sentAt.desc(), table.id.desc()),
   ],
 )

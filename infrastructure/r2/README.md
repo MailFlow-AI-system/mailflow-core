@@ -40,6 +40,11 @@ messages. Core's cleanup handles unassociated metadata and old orphan final
 objects, recognizes only Mail key shapes, and preserves referenced legacy files.
 Existing objects are not moved or assigned to guessed workspaces by this change.
 
+Draft discard expires only unassociated files and releases reservations or provider
+rejections proven safe to cancel. The hourly cleanup also releases safe abandoned
+attempts after 24 hours. Accepted, active and uncertain attempts retain their files;
+a timeout never authorizes deletion. Coordinate writer versions during rollout.
+
 Store `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and
 `R2_SECRET_ACCESS_KEY` under `/mailflow-core` in each matching Infisical environment.
 Issue a different Object Read & Write token restricted to that environment's bucket.

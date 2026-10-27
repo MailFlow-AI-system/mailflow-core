@@ -1,6 +1,9 @@
-import { randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { Client } from 'pg'
@@ -225,13 +228,232 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
     }
   })
 
+  async function installMailPrefix(client: Client, length: number) {
+    const migrations = readMigrationFiles({
+      migrationsFolder: fileURLToPath(
+        new URL('../../../database/migrations/mail/', import.meta.url),
+      ),
+    }).slice(0, length)
+    await client.query('CREATE SCHEMA mail_migrations')
+    await client.query(
+      'CREATE TABLE mail_migrations.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+    )
+    for (const migration of migrations) {
+      for (const statement of migration.sql) if (statement.trim()) await client.query(statement)
+      await client.query(
+        'INSERT INTO mail_migrations.__drizzle_migrations (hash, created_at) VALUES ($1,$2)',
+        [migration.hash, migration.folderMillis],
+      )
+    }
+  }
+
+  it('reconciles the applied Send history without deleting or inventing workspace ownership for legacy Inbox data', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      await installMailPrefix(client, 6)
+      const id = randomUUID()
+      await client.query(
+        "INSERT INTO mail.message(id,sender_name,subject,body,received_at) VALUES ($1,'Legacy sender','Preserved Inbox','Original content',now())",
+        [id],
+      )
+      await runMigrations(environment, ['mail'])
+      expect(
+        (await client.query('SELECT id,workspace_id,subject,body FROM mail.message')).rows,
+      ).toEqual([{ id, workspace_id: null, subject: 'Preserved Inbox', body: 'Original content' }])
+      expect(
+        (
+          await client.query(
+            "SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='mail.message'::regclass",
+          )
+        ).rows,
+      ).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }])
+      expect(
+        (
+          await client.query(
+            "SELECT convalidated FROM pg_constraint WHERE conname='message_workspace_required'",
+          )
+        ).rows,
+      ).toEqual([{ convalidated: false }])
+      await expect(
+        client.query(
+          "INSERT INTO mail.message(sender_name,subject,body,received_at) VALUES ('New','Unscoped','Rejected',now())",
+        ),
+      ).rejects.toThrow('message_workspace_required')
+      expect(await ledger(client, 'mail_migrations')).toEqual(expectedLedger('mail'))
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('reconciles PR24-only history, applies older missing Send migrations and preserves existing workspace messages', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      await installMailPrefix(client, 1)
+      const legacySql = readFileSync(
+        new URL(
+          '../../../database/migrations/mail/legacy/0001_workspace_inbox.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      )
+      for (const statement of legacySql.split('--> statement-breakpoint'))
+        if (statement.trim()) await client.query(statement)
+      const legacyRow = {
+        hash: createHash('sha256').update(legacySql).digest('hex'),
+        created_at: '1793025084417',
+      }
+      await client.query(
+        'INSERT INTO mail_migrations.__drizzle_migrations(hash,created_at) VALUES ($1,$2)',
+        [legacyRow.hash, legacyRow.created_at],
+      )
+      const id = randomUUID()
+      await client.query(
+        "INSERT INTO mail.message(id,workspace_id,sender_name,subject,body,received_at) VALUES ($1,'actual-workspace','Sender','Preserved scoped Inbox','Original scoped content',now())",
+        [id],
+      )
+      await runMigrations(environment, ['mail'])
+      expect((await client.query('SELECT id,workspace_id,subject FROM mail.message')).rows).toEqual(
+        [{ id, workspace_id: 'actual-workspace', subject: 'Preserved scoped Inbox' }],
+      )
+      expect(
+        (
+          await client.query(
+            "SELECT is_nullable FROM information_schema.columns WHERE table_schema='mail' AND table_name='message' AND column_name='workspace_id'",
+          )
+        ).rows,
+      ).toEqual([{ is_nullable: 'YES' }])
+      const expected = [...expectedLedger('mail'), legacyRow].sort(
+        (a, b) => Number(a.created_at) - Number(b.created_at),
+      )
+      expect(await ledger(client, 'mail_migrations')).toEqual(expected)
+      expect(
+        (await client.query("SELECT to_regclass('mail.outgoing_email') AS outgoing")).rows,
+      ).toEqual([{ outgoing: 'mail.outgoing_email' }])
+      await runMigrations(environment, ['mail'])
+      expect(await ledger(client, 'mail_migrations')).toEqual(expected)
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('preserves outgoing data when PR24 was applied after the older Send migrations', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      await installMailPrefix(client, 3)
+      const outgoingId = randomUUID()
+      await client.query(
+        `INSERT INTO mail.outgoing_email(id,user_id,payload_hash,"to",cc,bcc,subject,html,text,provider_id,sent_at) VALUES ($1,'legacy-owner','original-hash','["recipient@example.test"]','[]','[]','Preserved outgoing','<p>Original</p>','Original','accepted-provider',now())`,
+        [outgoingId],
+      )
+      const legacySql = readFileSync(
+        new URL(
+          '../../../database/migrations/mail/legacy/0001_workspace_inbox.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      )
+      for (const statement of legacySql.split('--> statement-breakpoint'))
+        if (statement.trim()) await client.query(statement)
+      await client.query(
+        'INSERT INTO mail_migrations.__drizzle_migrations(hash,created_at) VALUES ($1,$2)',
+        [createHash('sha256').update(legacySql).digest('hex'), '1793025084417'],
+      )
+      await runMigrations(environment, ['mail'])
+      expect(
+        (
+          await client.query(
+            'SELECT id,user_id,workspace_id,payload_hash,provider_id,delivery_state FROM mail.outgoing_email',
+          )
+        ).rows,
+      ).toEqual([
+        {
+          id: outgoingId,
+          user_id: 'legacy-owner',
+          workspace_id: null,
+          payload_hash: 'original-hash',
+          provider_id: 'accepted-provider',
+          delivery_state: 'uncertain',
+        },
+      ])
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('blocks an unknown applied Mail migration before creating Identity or modifying existing data', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      await installMailPrefix(client, 1)
+      await client.query(
+        "INSERT INTO mail_migrations.__drizzle_migrations(hash,created_at) VALUES ('unknown-history',1795000000000)",
+      )
+      await expect(runMigrations(environment)).rejects.toThrow('Migration ledger mismatch for mail')
+      expect(
+        (await client.query("SELECT to_regnamespace('identity_workspace') AS schema")).rows,
+      ).toEqual([{ schema: null }])
+      expect(
+        (
+          await client.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='mail' AND table_name='message' AND column_name='workspace_id'",
+          )
+        ).rows,
+      ).toEqual([])
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('makes the real pre-deploy entrypoint exit nonzero on divergence without changing application data', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      await installMailPrefix(client, 6)
+      await client.query(
+        "UPDATE mail_migrations.__drizzle_migrations SET hash='tampered' WHERE created_at=1793016657678",
+      )
+      await expect(
+        promisify(execFile)(
+          process.execPath,
+          [
+            '--import',
+            'tsx',
+            fileURLToPath(new URL('../../entrypoints/migrate.ts', import.meta.url)),
+          ],
+          {
+            env: { ...process.env, ...environment },
+            cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining('MIGRATION_LEDGER_MISMATCH'),
+      })
+      expect(
+        (await client.query("SELECT to_regnamespace('identity_workspace') AS schema")).rows,
+      ).toEqual([{ schema: null }])
+      expect(
+        (
+          await client.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='mail' AND table_name='message' AND column_name='workspace_id'",
+          )
+        ).rows,
+      ).toEqual([])
+    } finally {
+      await client.end()
+    }
+  })
+
   it('repeats without duplicating ledger entries or changing existing data', async () => {
     const environment = await createTestDatabase()
     await runMigrations(environment)
     const client = await connect(environment)
     try {
       await client.query(
-        "INSERT INTO mail.message (sender_name, subject, body, received_at) VALUES ('Migration test', 'Preserved', 'Existing data', now())",
+        "INSERT INTO mail.message (workspace_id, sender_name, subject, body, received_at) VALUES ('workspace-migration-test', 'Migration test', 'Preserved', 'Existing data', now())",
       )
       const before = await ledger(client, 'identity_workspace_migrations')
       await runMigrations(environment)

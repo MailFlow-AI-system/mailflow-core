@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createResendDelivery } from './resendDelivery.js'
+import { ProviderRejectedError } from './types.js'
 
 const message = {
   id: 'id',
@@ -79,4 +80,36 @@ it('forwards inline image content ids and MIME types through the Resend SDK', as
       content_type: 'image/png',
     },
   ])
+})
+
+it('distinguishes explicit provider rejection from ambiguous delivery outcomes', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(
+        { name: 'validation_error', statusCode: 422, message: 'invalid attachment' },
+        { status: 422 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ name: 'internal_server_error', message: 'unknown' }, { status: 500 }),
+    )
+    .mockResolvedValueOnce(
+      Response.json(
+        { name: 'concurrent_idempotent_requests', message: 'in progress' },
+        { status: 409 },
+      ),
+    )
+    .mockRejectedValueOnce(new Error('connection reset'))
+  vi.stubGlobal('fetch', fetcher)
+  const deliver = createResendDelivery({
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'sender@example.test',
+  })
+  await expect(deliver(message, 'key')).rejects.toBeInstanceOf(ProviderRejectedError)
+  for (let index = 0; index < 3; index++) {
+    const error = await deliver(message, 'key').catch((failure: unknown) => failure)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(ProviderRejectedError)
+  }
 })
