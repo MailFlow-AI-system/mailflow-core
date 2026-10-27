@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Pool } from 'pg'
+import {
+  createSampleWorkspace,
+  createVerifiedUser,
+} from '../../../../scripts/local/provisionWorkspace.js'
 import { loadAuthConfig } from '../infrastructure/auth/authConfig.js'
 import { createAuth } from '../infrastructure/auth/createAuth.js'
 import { workspaceTestDatabaseUrl } from './testDatabase.test-support.js'
@@ -49,49 +53,28 @@ export async function createWorkspaceTestFixture() {
   const auth = createAuth(drizzle(pool), authConfig, async () => {})
   const email = `workspace-${randomUUID()}@mailflow.invalid`,
     password = 'workspace-fixture-password-123'
-  const user = await auth.api.signUpEmail({ body: { name: 'Workspace Test', email, password } })
-  await admin.query('update identity_workspace."user" set email_verified = true where id = $1', [
-    user.user.id,
-  ])
+  const user = await createVerifiedUser(admin, { name: 'Workspace Test', email, password })
   const otherEmail = `other-${randomUUID()}@mailflow.invalid`
-  const otherUser = await auth.api.signUpEmail({
-    body: { name: 'Other User', email: otherEmail, password },
+  const otherUser = await createVerifiedUser(admin, {
+    name: 'Other User',
+    email: otherEmail,
+    password,
   })
-  const otherId = otherUser.user.id
-  await admin.query('update identity_workspace."user" set email_verified=true where id=$1', [
-    otherId,
-  ])
+  const otherId = otherUser.id
   const acme = randomUUID(),
     northwind = randomUUID(),
     globex = randomUUID()
-  const client = await admin.connect()
-  try {
-    await client.query('BEGIN')
-    for (const [id, name, slug, owner] of [
-      [acme, 'Acme Corp', `acme-${slugSuffix}`, user.user.id],
-      [northwind, 'Northwind', `northwind-${slugSuffix}`, otherId],
-      [globex, 'Globex', `globex-${slugSuffix}`, otherId],
-    ]) {
-      await client.query(
-        `insert into identity_workspace.organization(id, name, slug, created_at) values ($1,$2,$3,now())`,
-        [id, name, slug],
-      )
-      await client.query(
-        `insert into identity_workspace.member(id, organization_id, user_id, role, created_at) values ($1,$2,$3,'owner',now())`,
-        [randomUUID(), id, owner],
-      )
-    }
-    await client.query(
-      `insert into identity_workspace.member(id, organization_id, user_id, role, created_at) values ($1,$2,$3,'member',now())`,
-      [randomUUID(), northwind, user.user.id],
-    )
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
+  for (const [id, name, slug, ownerId] of [
+    [acme, 'Acme Corp', `acme-${slugSuffix}`, user.id],
+    [northwind, 'Northwind', `northwind-${slugSuffix}`, otherId],
+    [globex, 'Globex', `globex-${slugSuffix}`, otherId],
+  ] as const) {
+    await createSampleWorkspace(admin, { id, name, slug, ownerId })
   }
+  await admin.query(
+    "insert into identity_workspace.member(id,organization_id,user_id,role,created_at) values($1,$2,$3,'member',now())",
+    [randomUUID(), northwind, user.id],
+  )
   return {
     admin,
     pool,
@@ -99,7 +82,7 @@ export async function createWorkspaceTestFixture() {
     authConfig,
     email,
     password,
-    userId: user.user.id,
+    userId: user.id,
     otherId,
     otherEmail,
     acme,
@@ -115,14 +98,14 @@ export async function createWorkspaceTestFixture() {
           [[acme, northwind, globex]],
         )
         await admin.query('delete from identity_workspace."user" where id = any($1::text[])', [
-          [user.user.id, otherId],
+          [user.id, otherId],
         ])
         await admin.query(
           'delete from identity_workspace.verification where identifier = any($1::text[])',
           [[`email-verification-otp-${email}`, `email-verification-otp-${otherEmail}`]],
         )
         await admin.query('delete from identity_workspace.rate_limit where key = any($1::text[])', [
-          [`workspace-discovery:${user.user.id}`, `workspace-discovery:${otherId}`],
+          [`workspace-discovery:${user.id}`, `workspace-discovery:${otherId}`],
         ])
       } finally {
         await pool.end()
