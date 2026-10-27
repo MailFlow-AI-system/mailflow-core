@@ -20,12 +20,18 @@ const problemSchema = z.object({
 
 export const listMessagesRoute = createRoute({
   method: 'get',
-  path: '/api/v1/mail/messages',
+  path: '/api/v1/workspaces/{slug}/mail/messages',
   tags: ['Mail'],
-  summary: 'List the global inbox in pages of eight messages',
+  summary: 'List the workspace inbox in pages of eight messages',
   description:
     'Requires a valid session. Search is a case-insensitive literal substring across sender, subject, and full body. Pass nextCursor unchanged for the next page with the same search.',
   request: {
+    params: z.object({
+      slug: z
+        .string()
+        .max(63)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    }),
     query: z.object({
       q: z
         .string()
@@ -51,6 +57,14 @@ export const listMessagesRoute = createRoute({
     },
     401: {
       description: 'Authentication is required.',
+      content: { 'application/problem+json': { schema: problemSchema } },
+    },
+    403: {
+      description: 'The session identity has changed.',
+      content: { 'application/problem+json': { schema: problemSchema } },
+    },
+    404: {
+      description: 'The workspace is unavailable.',
       content: { 'application/problem+json': { schema: problemSchema } },
     },
     500: {

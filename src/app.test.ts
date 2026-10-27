@@ -41,7 +41,7 @@ function createTestApp(
 }
 
 describe('application', () => {
-  it('blocks the global mail repository in workspace mode, including direct API requests', async () => {
+  it('removes the global inbox in workspace mode, including direct API requests', async () => {
     const findMessages = vi.fn().mockResolvedValue([])
     const app = createTestApp(
       {},
@@ -63,13 +63,13 @@ describe('application', () => {
 
     const response = await app.request('/api/v1/mail/messages?q=secret')
 
-    expect(response.status).toBe(503)
-    expect(await response.json()).toMatchObject({ code: 'workspace_mail_unavailable' })
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'route_not_found' })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(findMessages).not.toHaveBeenCalled()
   })
 
-  it('preserves the authenticated global Inbox when workspace mode is disabled', async () => {
+  it('does not mount mail without a workspace reader', async () => {
     const findMessages = vi.fn().mockResolvedValue([])
     const app = createTestApp(
       {},
@@ -84,8 +84,9 @@ describe('application', () => {
 
     const response = await app.request('/api/v1/mail/messages')
 
-    expect(response.status).toBe(200)
-    expect(findMessages).toHaveBeenCalledOnce()
+    expect(response.status).toBe(404)
+    expect((await app.request('/api/v1/workspaces/acme/mail/messages')).status).toBe(404)
+    expect(findMessages).not.toHaveBeenCalled()
   })
 
   it('still authenticates before blocking mail in workspace mode', async () => {

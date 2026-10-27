@@ -41,10 +41,15 @@ function decodeCursor(value: string): MessageCursor {
 
 export async function listMessages(
   repository: MailMessageRepository,
+  workspaceId: string,
   query: ListMessagesQuery,
 ): Promise<ListMessagesResponse> {
   const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor)
-  const messages = await repository.findMessages({ search: query.q?.trim() ?? '', cursor })
+  const messages = await repository.findMessages({
+    workspaceId,
+    search: query.q?.trim() ?? '',
+    cursor,
+  })
   const items = messages.slice(0, INBOX_PAGE_SIZE).map((message) => ({
     ...message,
     receivedAt: message.receivedAt.toISOString(),

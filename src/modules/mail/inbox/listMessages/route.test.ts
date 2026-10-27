@@ -15,6 +15,10 @@ function createTestApp(authenticated = true) {
     },
   }
 
+  const resolveWorkspace = vi
+    .fn()
+    .mockResolvedValue({ id: 'workspace-a', name: 'Acme', slug: 'acme', role: 'owner' })
+  const consumeBudget = vi.fn().mockResolvedValue(0)
   const app = createApp({
     config: {
       appEnv: 'development',
@@ -33,12 +37,19 @@ function createTestApp(authenticated = true) {
     auth,
     allowedAuthOrigins: ['http://localhost:3000'],
     mailRepository: repository,
+    workspaces: {
+      reader: {
+        list: async () => ({ items: [], nextCursor: null }),
+        context: resolveWorkspace,
+      },
+      consumeBudget,
+    },
   })
 
-  return { app, repository }
+  return { app, repository, resolveWorkspace, consumeBudget }
 }
 
-describe('GET /api/v1/mail/messages', () => {
+describe('GET /api/v1/workspaces/acme/mail/messages', () => {
   it('returns authenticated messages and preserves credentialed CORS', async () => {
     const { app, repository } = createTestApp()
     const message = {
@@ -50,7 +61,7 @@ describe('GET /api/v1/mail/messages', () => {
     }
     repository.findMessages.mockResolvedValue([message])
 
-    const response = await app.request('/api/v1/mail/messages?q=%20invoice%20', {
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages?q=%20invoice%20', {
       headers: { Origin: 'http://localhost:3000' },
     })
 
@@ -61,13 +72,17 @@ describe('GET /api/v1/mail/messages', () => {
       items: [{ ...message, receivedAt: message.receivedAt.toISOString() }],
       nextCursor: null,
     })
-    expect(repository.findMessages).toHaveBeenCalledWith({ search: 'invoice', cursor: null })
+    expect(repository.findMessages).toHaveBeenCalledWith({
+      workspaceId: 'workspace-a',
+      search: 'invoice',
+      cursor: null,
+    })
   })
 
   it('rejects unauthenticated requests before querying messages', async () => {
     const { app, repository } = createTestApp(false)
 
-    const response = await app.request('/api/v1/mail/messages?cursor=malformed')
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages?cursor=malformed')
 
     expect(response.status).toBe(401)
     expect(response.headers.get('content-type')).toContain('application/problem+json')
@@ -78,7 +93,7 @@ describe('GET /api/v1/mail/messages', () => {
   it.each(['malformed', ''])('returns problem details for invalid cursor %s', async (cursor) => {
     const { app, repository } = createTestApp()
 
-    const response = await app.request(`/api/v1/mail/messages?cursor=${cursor}`, {
+    const response = await app.request(`/api/v1/workspaces/acme/mail/messages?cursor=${cursor}`, {
       headers: { 'x-request-id': 'cursor-test' },
     })
 
@@ -89,7 +104,7 @@ describe('GET /api/v1/mail/messages', () => {
       title: 'Bad Request',
       status: 400,
       detail: 'The message cursor is invalid.',
-      instance: '/api/v1/mail/messages',
+      instance: '/api/v1/workspaces/acme/mail/messages',
       code: 'invalid_message_cursor',
       requestId: 'cursor-test',
     })
@@ -100,7 +115,7 @@ describe('GET /api/v1/mail/messages', () => {
     const { app, repository } = createTestApp()
     repository.findMessages.mockRejectedValue(new Error('sensitive database credentials'))
 
-    const response = await app.request('/api/v1/mail/messages')
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages')
     const body = await response.text()
 
     expect(response.status).toBe(500)
@@ -109,14 +124,98 @@ describe('GET /api/v1/mail/messages', () => {
     expect(body).not.toContain('sensitive database credentials')
   })
 
+  it.each(['unknown', 'unrelated'])(
+    'returns the same unavailable response for %s membership',
+    async (slug) => {
+      const { app, repository, resolveWorkspace, consumeBudget } = createTestApp()
+      resolveWorkspace.mockResolvedValue(null)
+      const response = await app.request(`/api/v1/workspaces/${slug}/mail/messages`)
+      expect(response.status).toBe(404)
+      expect(await response.json()).toMatchObject({ code: 'workspace_unavailable' })
+      expect(repository.findMessages).not.toHaveBeenCalled()
+      expect(consumeBudget).not.toHaveBeenCalled()
+    },
+  )
+
+  it('accepts the expected identity and returns private workspace-scoped data', async () => {
+    const { app, repository } = createTestApp()
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages', {
+      headers: { 'X-Workspace-Identity': 'user' },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(response.headers.get('X-Workspace-Identity')).toBe('user')
+    expect(repository.findMessages).toHaveBeenCalledWith({
+      workspaceId: 'workspace-a',
+      search: '',
+      cursor: null,
+    })
+  })
+
+  it.each(['bad_slug', 'a'.repeat(64)])(
+    'rejects invalid selector %s before resolving membership',
+    async (slug) => {
+      const { app, repository, resolveWorkspace } = createTestApp()
+      expect((await app.request(`/api/v1/workspaces/${slug}/mail/messages`)).status).toBe(400)
+      expect(resolveWorkspace).not.toHaveBeenCalled()
+      expect(repository.findMessages).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects changed identity before resolving membership or querying messages', async () => {
+    const { app, repository, resolveWorkspace, consumeBudget } = createTestApp()
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages', {
+      headers: { 'X-Workspace-Identity': 'other-user' },
+    })
+    expect(response.status).toBe(403)
+    expect(response.headers.get('X-Workspace-Identity')).toBe('user')
+    expect(await response.json()).toMatchObject({ code: 'workspace_identity_changed' })
+    expect(resolveWorkspace).not.toHaveBeenCalled()
+    expect(repository.findMessages).not.toHaveBeenCalled()
+    expect(consumeBudget).not.toHaveBeenCalled()
+  })
+
+  it('does not consume discovery budget for inbox requests or unknown mail paths', async () => {
+    const { app, consumeBudget, resolveWorkspace } = createTestApp()
+    expect((await app.request('/api/v1/workspaces/acme/mail/messages')).status).toBe(200)
+    expect((await app.request('/api/v1/workspaces/acme/mail/unknown')).status).toBe(404)
+    expect(resolveWorkspace).toHaveBeenCalledWith('user', 'acme')
+    expect(consumeBudget).not.toHaveBeenCalled()
+  })
+
+  it.each(['messages', 'unknown', 'messages/extra'])(
+    'authenticates every mail path: %s',
+    async (path) => {
+      const { app, repository, resolveWorkspace } = createTestApp(false)
+      expect((await app.request(`/api/v1/workspaces/acme/mail/${path}`)).status).toBe(401)
+      expect(resolveWorkspace).not.toHaveBeenCalled()
+      expect(repository.findMessages).not.toHaveBeenCalled()
+    },
+  )
+
+  it('blocks unknown mail paths on failed membership', async () => {
+    const { app, resolveWorkspace, consumeBudget } = createTestApp()
+    resolveWorkspace.mockResolvedValue(null)
+    const response = await app.request('/api/v1/workspaces/acme/mail/unknown')
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'workspace_unavailable' })
+    expect(consumeBudget).not.toHaveBeenCalled()
+  })
+
+  it('never exposes the old global inbox', async () => {
+    const { app } = createTestApp()
+    expect((await app.request('/api/v1/mail/messages')).status).toBe(404)
+  })
+
   it('publishes the inbox query and response contract in OpenAPI', async () => {
     const { app } = createTestApp()
 
     const response = await app.request('/openapi.json')
     const specification = await response.json()
-    const operation = specification.paths['/api/v1/mail/messages'].get
+    const operation = specification.paths['/api/v1/workspaces/{slug}/mail/messages'].get
 
     expect(operation.parameters.map((parameter: { name: string }) => parameter.name)).toEqual([
+      'slug',
       'q',
       'cursor',
     ])

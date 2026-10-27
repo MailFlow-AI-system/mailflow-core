@@ -11,7 +11,7 @@ import {
   createWorkspaceSelectionRoutes,
   installAuthRoutes,
 } from '#modules/identityWorkspace'
-import { blockGlobalWorkspaceMail, createMailModule } from '#modules/mail'
+import { createMailModule } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { requestLogger } from '#shared/http/requestLogger'
@@ -43,9 +43,14 @@ export function createApp({
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
-  if (workspaces || onboarding || workspaceSelection || workspaceEntry)
-    app.use('/api/v1/mail/*', blockGlobalWorkspaceMail)
-  if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
+  if (mailRepository && workspaces)
+    app.route(
+      '/',
+      createMailModule({
+        repository: mailRepository,
+        resolveWorkspace: (userId, slug) => workspaces.reader.context(userId, slug),
+      }),
+    )
   if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
   if (onboarding) app.route('/', createOnboardingRoutes(onboarding))
   if (workspaceSelection) app.route('/', createWorkspaceSelectionRoutes(workspaceSelection))
