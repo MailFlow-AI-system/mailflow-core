@@ -1,10 +1,11 @@
-import { fileURLToPath } from 'node:url'
-
-import { drizzle } from 'drizzle-orm/node-postgres'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Client } from 'pg'
 
 import { loadMigrationConfig } from './migrationConfig.js'
+import {
+  loadModuleMigrations,
+  planMigrationHistory,
+  readAppliedMigrations,
+} from './migrationLedgers.js'
 import { migrationModules, migrationTable } from './migrationModules.js'
 
 type MigrationLog = (message: string, context: { module: string }) => void
@@ -23,7 +24,7 @@ export async function runMigrations(
     const validTargets = migrationModules.map((module) => module.name).join(', ')
     throw new Error(`Invalid migration target; use ${validTargets}, or no target for all`)
   }
-
+  const shipped = selected.map((module) => ({ module, expected: loadModuleMigrations(module) }))
   const client = new Client({
     connectionString: directUrl,
     application_name: 'mailflow-core-migrations',
@@ -38,23 +39,47 @@ export async function runMigrations(
 
   try {
     await client.connect()
-    // Session-scoped: all modules and their transactions use this same direct connection.
+    // Session-scoped: all modules and transactions use the same direct connection.
     await client.query('SELECT pg_advisory_lock($1)', [1_296_450_119])
-    const database = drizzle({ client })
-    for (const module of selected) {
+    const plans = []
+    // Validate every selected ledger before any module can change application data.
+    for (const { module, expected } of shipped) {
+      const applied = await readAppliedMigrations(client, module, true)
+      plans.push({ module, expected, pending: planMigrationHistory(module, expected, applied) })
+    }
+    for (const { module, expected, pending } of plans) {
       log('Migration started', { module: module.name })
-      await migrate(database, {
-        migrationsFolder: fileURLToPath(
-          new URL(`../../../database/migrations/${module.folder}/`, import.meta.url),
-        ),
-        migrationsSchema: module.schema,
-        migrationsTable: migrationTable,
-      })
-      if (connectionError) throw connectionError
+      const schema = `"${module.schema.replaceAll('"', '""')}"`
+      const table = `${schema}."${migrationTable.replaceAll('"', '""')}"`
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS ${table} (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)`,
+      )
+      await client.query('BEGIN')
+      try {
+        for (const migration of pending) {
+          for (const statement of migration.sql) {
+            if (statement.trim()) await client.query(statement)
+          }
+          await client.query(`INSERT INTO ${table} (hash, created_at) VALUES ($1, $2)`, [
+            migration.hash,
+            migration.folderMillis,
+          ])
+        }
+        planMigrationHistory(module, expected, await readAppliedMigrations(client, module), true)
+        if (connectionError) throw connectionError
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw error
+      }
       log('Migration completed', { module: module.name })
     }
+    for (const { module, expected } of plans) {
+      planMigrationHistory(module, expected, await readAppliedMigrations(client, module), true)
+    }
   } finally {
-    // Closing the session also releases its advisory lock, including after rollback or failure.
+    // Closing the session releases its advisory lock, including after rollback or failure.
     await client.end()
   }
 }

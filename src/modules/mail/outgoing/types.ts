@@ -2,6 +2,12 @@ import type { MailContext } from '../context/types.js'
 import type { SendEmailInput } from './contract.js'
 
 export class MessageConflictError extends Error {}
+export class ProviderRejectedError extends Error {}
+
+export type DeliveryState = 'ready' | 'rejected' | 'uncertain' | 'sent' | 'discarded'
+export type DeliveryAttempt = { token: string; canReject: boolean }
+export type DiscardInput = { messageIds: string[]; attachmentIds: string[] }
+export type DiscardResult = { status: 'discarded'; retainedMessageIds: string[] }
 
 export type ProviderAttachment = {
   filename: string
@@ -43,6 +49,10 @@ export type OutgoingRepository = {
   reserve: (
     input: SendEmailInput & MailContext & { payloadHash: string; deliveryKey: string },
   ) => Promise<ReservedEmail>
+  beginAttempt: (context: MailContext, id: string) => Promise<DeliveryAttempt | null>
+  markRejected: (context: MailContext, id: string, attempt: DeliveryAttempt) => Promise<void>
+  cleanupAbandoned: () => Promise<number>
+  discard: (context: MailContext, input: DiscardInput) => Promise<DiscardResult>
   markSent: (context: MailContext, id: string, providerId: string) => Promise<void>
   listSent: (userId: string, offset: number) => Promise<SentEmail[]>
   findSent?: (context: MailContext, id: string) => Promise<(SentEmail & { html: string }) | null>

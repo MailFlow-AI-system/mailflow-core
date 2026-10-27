@@ -49,7 +49,9 @@
     "email:dev": "email dev --dir src/modules/identityWorkspace/accountEmails/templates --port 4000",
     "deploy:check": "tsx src/entrypoints/configureRailwayMigrations.ts",
     "deploy:configure": "tsx src/entrypoints/configureRailwayMigrations.ts --apply",
-    "attachments:cleanup": "tsx --conditions=development src/entrypoints/cleanupAttachments.ts"
+    "attachments:cleanup": "tsx --conditions=development src/entrypoints/cleanupAttachments.ts",
+    "db:setup:local": "tsx scripts/local/setup.ts",
+    "dev:workspace-sample": "tsx scripts/local/workspaceSample.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1157.0",

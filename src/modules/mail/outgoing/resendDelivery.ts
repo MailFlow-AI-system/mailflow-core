@@ -1,6 +1,22 @@
 import { Resend } from 'resend'
 import { z } from 'zod'
-import type { OutgoingMail } from './types.js'
+import { type OutgoingMail, ProviderRejectedError } from './types.js'
+
+const rejectedErrors = new Set([
+  'validation_error',
+  'invalid_attachment',
+  'invalid_from_address',
+  'invalid_parameter',
+  'missing_required_field',
+  'missing_api_key',
+  'restricted_api_key',
+  'invalid_api_key',
+  'invalid_access',
+  'invalid_region',
+  'monthly_quota_exceeded',
+  'daily_quota_exceeded',
+  'rate_limit_exceeded',
+])
 
 export function createResendDelivery(
   environment: Record<string, string | undefined>,
@@ -28,6 +44,13 @@ export function createResendDelivery(
       },
       { idempotencyKey },
     )
+    if (
+      error &&
+      rejectedErrors.has(error.name) &&
+      error.statusCode !== null &&
+      [400, 401, 403, 422, 429].includes(error.statusCode)
+    )
+      throw new ProviderRejectedError('Email delivery failed')
     if (error || !data?.id) throw new Error('Email delivery failed')
     return data.id
   }

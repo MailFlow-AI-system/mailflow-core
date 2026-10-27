@@ -88,6 +88,7 @@ jobs:
             src/modules/identityWorkspace/infrastructure/auth/auth.integration.test.ts \
             src/modules/mail/inbox/listMessages/listMessages.integration.test.ts \
             src/modules/mail/outgoing/outgoingRepository.integration.test.ts \
+            src/modules/mail/outgoing/discard.integration.test.ts \
             src/modules/mail/attachments/attachmentRepository.integration.test.ts
 
       - name: Validate Collector image and configuration
