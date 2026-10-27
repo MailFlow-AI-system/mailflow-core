@@ -95,7 +95,7 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
     const client = await connect(environment)
     try {
       await client.query(
-        "INSERT INTO mail.message (sender_name, subject, body, received_at) VALUES ('Migration test', 'Preserved', 'Existing data', now())",
+        "INSERT INTO mail.message (workspace_id, sender_name, subject, body, received_at) VALUES ('workspace-migration-test', 'Migration test', 'Preserved', 'Existing data', now())",
       )
       const before = await ledger(client, 'identity_workspace_migrations')
       await runMigrations(environment)
@@ -134,6 +134,52 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
       expect(await ledger(client, 'identity_workspace_migrations')).toEqual(
         expectedLedger('identityWorkspace'),
       )
+      expect(await ledger(client, 'mail_migrations')).toEqual(expectedLedger('mail'))
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('upgrades the global inbox by clearing old fixtures and forcing workspace RLS', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      const first = readMigrationFiles({
+        migrationsFolder: fileURLToPath(
+          new URL('../../../database/migrations/mail/', import.meta.url),
+        ),
+      })[0]
+      if (!first) throw new Error('Missing initial mail migration')
+      await client.query('CREATE SCHEMA mail_migrations')
+      await client.query(
+        'CREATE TABLE mail_migrations.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+      )
+      await client.query('BEGIN')
+      for (const statement of first.sql) await client.query(statement)
+      await client.query(
+        'INSERT INTO mail_migrations.__drizzle_migrations (hash, created_at) VALUES ($1, $2)',
+        [first.hash, first.folderMillis],
+      )
+      await client.query(
+        "INSERT INTO mail.message (sender_name, subject, body, received_at) VALUES ('Old fixture', 'Global', 'Discarded fixture', now())",
+      )
+      await client.query('COMMIT')
+      await runMigrations(environment)
+      expect((await client.query('SELECT * FROM mail.message')).rows).toEqual([])
+      expect(
+        (
+          await client.query(
+            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'mail.message'::regclass",
+          )
+        ).rows,
+      ).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }])
+      expect(
+        (
+          await client.query(
+            "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'mail' AND table_name = 'message' AND column_name = 'workspace_id'",
+          )
+        ).rows,
+      ).toEqual([{ is_nullable: 'NO' }])
       expect(await ledger(client, 'mail_migrations')).toEqual(expectedLedger('mail'))
     } finally {
       await client.end()
