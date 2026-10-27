@@ -122,3 +122,41 @@ export const sentEmailsRoute = createRoute({
     401: errorResponse,
   },
 })
+
+export const discardEmailRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/mail/discard',
+  tags: ['Mail'],
+  summary: 'Discard safely unused delivery attempts and uploads',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: z.strictObject({
+            messageIds: z.array(z.uuid()).max(100),
+            attachmentIds: z.array(z.uuid()).max(100),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Unused files released; accepted or uncertain deliveries retained.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('discarded'),
+            retainedMessageIds: z.array(z.uuid()),
+          }),
+        },
+      },
+    },
+    400: errorResponse,
+    401: errorResponse,
+    403: errorResponse,
+    413: errorResponse,
+    502: errorResponse,
+  },
+})

@@ -1,3 +1,4 @@
+import type { MigrationMeta } from 'drizzle-orm/migrator'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -6,10 +7,8 @@ const mocks = vi.hoisted(() => ({
   end: vi.fn(),
   on: vi.fn(),
   client: vi.fn(),
-  migrate: vi.fn(),
-  drizzle: vi.fn(),
+  readMigrationFiles: vi.fn(),
 }))
-
 vi.mock('pg', () => ({
   Client: class {
     connect = mocks.connect
@@ -21,61 +20,115 @@ vi.mock('pg', () => ({
     }
   },
 }))
-vi.mock('drizzle-orm/node-postgres', () => ({ drizzle: mocks.drizzle }))
-vi.mock('drizzle-orm/node-postgres/migrator', () => ({ migrate: mocks.migrate }))
+vi.mock('drizzle-orm/migrator', () => ({ readMigrationFiles: mocks.readMigrationFiles }))
 
 import { runMigrations } from './migrations.js'
 
 const environment = { DIRECT_URL: 'postgresql://migrator:password@localhost:5432/mailflow' }
+const fixture = (name: string, timestamp: number): MigrationMeta => ({
+  hash: `${name}-hash`,
+  folderMillis: timestamp,
+  sql: [`CREATE TABLE ${name} (id integer);`],
+  bps: true,
+})
+const shipped = {
+  identity_workspace_migrations: [fixture('identity_first', 1000), fixture('identity_next', 2000)],
+  mail_migrations: [fixture('mail_first', 1000), fixture('mail_next', 2000)],
+}
+type Row = { hash: string; created_at: string }
+let ledgers: Record<string, Row[]>
+
+function relation(sql: string) {
+  const schema = /"([^"]+)"\."__drizzle_migrations"/.exec(sql)?.[1]
+  if (!schema) throw new Error('Expected test ledger relation')
+  return schema
+}
+async function query(sql: string, values: unknown[] = []) {
+  if (sql.startsWith('SELECT to_regclass')) {
+    const schema = relation(String(values[0]))
+    return { rows: [{ ledger: ledgers[schema] ? String(values[0]) : null }] }
+  }
+  if (sql.startsWith('SELECT hash')) return { rows: ledgers[relation(sql)] ?? [] }
+  if (sql.startsWith('CREATE TABLE IF NOT EXISTS')) ledgers[relation(sql)] ??= []
+  if (sql.startsWith('INSERT INTO')) {
+    ledgers[relation(sql)]?.push({ hash: String(values[0]), created_at: String(values[1]) })
+  }
+  return { rows: [] }
+}
 
 describe('runMigrations', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    mocks.connect.mockResolvedValue(undefined)
-    mocks.query.mockResolvedValue({ rows: [] })
-    mocks.end.mockResolvedValue(undefined)
-    mocks.migrate.mockResolvedValue(undefined)
-    mocks.drizzle.mockReturnValue({ database: true })
+    ledgers = {}
+    mocks.query.mockImplementation(query)
+    mocks.readMigrationFiles.mockImplementation(
+      ({ migrationsFolder }: { migrationsFolder: string }) =>
+        migrationsFolder.endsWith('/identityWorkspace/')
+          ? shipped.identity_workspace_migrations
+          : shipped.mail_migrations,
+    )
   })
 
-  it('holds a session lock and applies identity before mail on the same connection', async () => {
-    await runMigrations(environment)
+  it('rejects divergence in a later module before any application SQL executes', async () => {
+    ledgers.mail_migrations = [{ hash: 'unknown', created_at: '1794000000000' }]
+    await expect(runMigrations(environment)).rejects.toThrow('Migration ledger mismatch for mail')
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).startsWith('CREATE TABLE'))).toBe(
+      false,
+    )
+    expect(mocks.query.mock.calls.some(([sql]) => sql === 'BEGIN')).toBe(false)
+    expect(mocks.end).toHaveBeenCalledOnce()
+  })
 
+  it('holds one session lock, applies Identity before Mail and verifies both complete histories', async () => {
+    await runMigrations(environment)
     expect(mocks.client).toHaveBeenCalledWith(
       expect.objectContaining({
         connectionString: environment.DIRECT_URL,
-        connectionTimeoutMillis: 10_000,
-        statement_timeout: 120_000,
-        lock_timeout: 15_000,
+        connectionTimeoutMillis: 10000,
+        statement_timeout: 120000,
+        lock_timeout: 15000,
       }),
     )
-    expect(mocks.query).toHaveBeenCalledWith('SELECT pg_advisory_lock($1)', expect.any(Array))
-    expect(mocks.query.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.migrate.mock.invocationCallOrder[0] ?? 0,
+    expect(mocks.query.mock.calls[0]).toEqual(['SELECT pg_advisory_lock($1)', [1296450119]])
+    const application = mocks.query.mock.calls.filter(
+      ([sql]) =>
+        String(sql).startsWith('CREATE TABLE ') && !String(sql).startsWith('CREATE TABLE IF'),
     )
-    expect(mocks.migrate.mock.calls.map(([, config]) => config.migrationsSchema)).toEqual([
-      'identity_workspace_migrations',
-      'mail_migrations',
+    expect(application.map(([sql]) => sql)).toEqual([
+      'CREATE TABLE identity_first (id integer);',
+      'CREATE TABLE identity_next (id integer);',
+      'CREATE TABLE mail_first (id integer);',
+      'CREATE TABLE mail_next (id integer);',
     ])
-    for (const [database, config] of mocks.migrate.mock.calls) {
-      expect(database).toEqual({ database: true })
-      expect(config).toMatchObject({ migrationsTable: '__drizzle_migrations' })
-      expect(config.migrationsFolder).toContain('/database/migrations/')
-    }
-    expect(mocks.drizzle).toHaveBeenCalledOnce()
-    expect(mocks.end).toHaveBeenCalledOnce()
-    expect(mocks.end.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.migrate.mock.invocationCallOrder[1] ?? 0,
+    expect(ledgers).toEqual(
+      Object.fromEntries(
+        Object.entries(shipped).map(([schema, entries]) => [
+          schema,
+          entries.map((entry) => ({ hash: entry.hash, created_at: String(entry.folderMillis) })),
+        ]),
+      ),
     )
+    expect(mocks.end).toHaveBeenCalledOnce()
   })
 
   it.each([
     ['identity-workspace', 'identity_workspace_migrations'],
     ['mail', 'mail_migrations'],
-  ])('runs only the selected module %s', async (target, schema) => {
-    await runMigrations(environment, [target])
-    expect(mocks.migrate).toHaveBeenCalledOnce()
-    expect(mocks.migrate.mock.calls[0]?.[1].migrationsSchema).toBe(schema)
+  ])('validates and applies only selected module %s', async (name, schema) => {
+    await runMigrations(environment, [name])
+    expect(Object.keys(ledgers)).toEqual([schema])
+  })
+
+  it('does not reapply a complete valid history', async () => {
+    await runMigrations(environment)
+    mocks.query.mockClear()
+    await runMigrations(environment)
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).startsWith('INSERT INTO'))).toBe(
+      false,
+    )
+    expect(
+      mocks.query.mock.calls.some(([sql]) => String(sql).startsWith('CREATE TABLE identity_first')),
+    ).toBe(false)
   })
 
   it.each([['unknown'], ['mail', 'identity-workspace']])(
@@ -86,62 +139,60 @@ describe('runMigrations', () => {
     },
   )
 
-  it('rejects missing DIRECT_URL before connecting even with DATABASE_URL', async () => {
+  it('requires DIRECT_URL even when DATABASE_URL exists', async () => {
     await expect(runMigrations({ DATABASE_URL: environment.DIRECT_URL })).rejects.toThrow(
       'DIRECT_URL',
     )
     expect(mocks.client).not.toHaveBeenCalled()
   })
 
-  it('uses registered targets and ledger metadata without another runner declaration', async () => {
-    vi.doMock('./migrationModules.js', () => ({
-      migrationModules: [{ name: 'billing', folder: 'billing', schema: 'billing_ledger' }],
-      migrationTable: 'migration_history',
-    }))
-    vi.resetModules()
-    try {
-      const { runMigrations: runRegisteredMigrations } = await import('./migrations.js')
-      await runRegisteredMigrations(environment, ['billing'])
-      expect(mocks.migrate).toHaveBeenCalledWith(
-        { database: true },
-        {
-          migrationsFolder: expect.stringContaining('/database/migrations/billing/'),
-          migrationsSchema: 'billing_ledger',
-          migrationsTable: 'migration_history',
-        },
-      )
-      await expect(runRegisteredMigrations(environment, ['unknown'])).rejects.toThrow(
-        'Invalid migration target; use billing, or no target for all',
-      )
-      expect(mocks.client).toHaveBeenCalledOnce()
-    } finally {
-      vi.doUnmock('./migrationModules.js')
-      vi.resetModules()
-    }
-  })
-
-  it('closes the connection when connecting fails', async () => {
-    mocks.connect.mockRejectedValue(new Error('connection failed'))
+  it('closes the session when connecting or locking fails', async () => {
+    mocks.connect.mockRejectedValueOnce(new Error('connection failed'))
     await expect(runMigrations(environment)).rejects.toThrow('connection failed')
-    expect(mocks.migrate).not.toHaveBeenCalled()
-    expect(mocks.end).toHaveBeenCalledOnce()
-  })
-
-  it('does not migrate when the session lock cannot be acquired', async () => {
-    mocks.query.mockRejectedValue(new Error('lock timeout'))
+    mocks.connect.mockResolvedValue(undefined)
+    mocks.query.mockRejectedValueOnce(new Error('lock timeout'))
     await expect(runMigrations(environment)).rejects.toThrow('lock timeout')
-    expect(mocks.migrate).not.toHaveBeenCalled()
-    expect(mocks.end).toHaveBeenCalledOnce()
+    expect(mocks.end).toHaveBeenCalledTimes(2)
   })
 
-  it('stops on migration failure and closes the connection to release the lock', async () => {
-    mocks.migrate.mockRejectedValueOnce(new Error('SQL failed'))
+  it('rolls back and stops when application SQL fails', async () => {
+    mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.startsWith('CREATE TABLE identity_first')) throw new Error('SQL failed')
+      return query(sql, values)
+    })
     await expect(runMigrations(environment)).rejects.toThrow('SQL failed')
-    expect(mocks.migrate).toHaveBeenCalledOnce()
+    expect(mocks.query).toHaveBeenCalledWith('ROLLBACK')
+    expect(
+      mocks.query.mock.calls.some(([sql]) => String(sql).startsWith('CREATE TABLE mail_first')),
+    ).toBe(false)
     expect(mocks.end).toHaveBeenCalledOnce()
   })
 
-  it('reports module completion without logging connection credentials', async () => {
+  it('fails and rolls back if the final ledger does not contain the executed migration', async () => {
+    mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.startsWith('INSERT INTO')) return { rows: [] }
+      return query(sql, values)
+    })
+    await expect(runMigrations(environment)).rejects.toThrow('Migration ledger mismatch')
+    expect(mocks.query).toHaveBeenCalledWith('ROLLBACK')
+    expect(mocks.query).not.toHaveBeenCalledWith('COMMIT')
+  })
+
+  it('rechecks all selected ledgers after a later module runs', async () => {
+    mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      const result = await query(sql, values)
+      if (sql.startsWith('CREATE TABLE mail_first')) {
+        const initial = ledgers.identity_workspace_migrations?.[0]
+        if (initial) initial.hash = 'tampered-during-later-module'
+      }
+      return result
+    })
+    await expect(runMigrations(environment)).rejects.toThrow(
+      'Migration ledger mismatch for identity-workspace',
+    )
+  })
+
+  it('reports completion only after verification without logging credentials', async () => {
     const log = vi.fn()
     await runMigrations(environment, [], log)
     expect(log.mock.calls).toEqual([

@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { bodyLimit } from 'hono/body-limit'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
-import { sendEmailRoute, sentEmailsRoute } from './contract.js'
+import { discardEmailRoute, sendEmailRoute, sentEmailsRoute } from './contract.js'
 import { MessageConflictError, sendEmail } from './sendEmail.js'
 import type { OutgoingMail } from './types.js'
 
@@ -10,16 +10,17 @@ export function createOutgoingMailModule(
   isAllowedOrigin: (origin: string) => boolean,
 ) {
   const app = new OpenAPIHono()
-  app.use('/api/v1/mail/send', async (context, next) => {
-    if (!isAllowedOrigin(context.req.header('origin') ?? ''))
-      return problemDetailsResponse(context, {
-        title: 'Forbidden',
-        status: 403,
-        detail: 'A trusted Origin is required.',
-        code: 'untrusted_origin',
-      })
-    await next()
-  })
+  for (const path of ['/api/v1/mail/send', '/api/v1/mail/discard'])
+    app.use(path, async (context, next) => {
+      if (!isAllowedOrigin(context.req.header('origin') ?? ''))
+        return problemDetailsResponse(context, {
+          title: 'Forbidden',
+          status: 403,
+          detail: 'A trusted Origin is required.',
+          code: 'untrusted_origin',
+        })
+      await next()
+    })
   app.use(
     '/api/v1/mail/send',
     bodyLimit({
@@ -60,6 +61,50 @@ export function createOutgoingMailModule(
         code: 'legacy_attachment_unsupported',
       })
     await next()
+  })
+  app.use(
+    '/api/v1/mail/discard',
+    bodyLimit({
+      maxSize: 16 * 1024,
+      onError: (context) =>
+        problemDetailsResponse(context, {
+          title: 'Payload too large',
+          status: 413,
+          detail: 'The discard batch is too large.',
+          code: 'discard_too_large',
+        }),
+    }),
+  )
+  app.use('/api/v1/mail/discard', async (context, next) => {
+    try {
+      await context.req.json()
+    } catch {
+      return problemDetailsResponse(context, {
+        title: 'Bad request',
+        status: 400,
+        detail: 'A valid JSON message is required.',
+        code: 'invalid_json',
+      })
+    }
+    await next()
+  })
+  app.openapi(discardEmailRoute, async (context) => {
+    try {
+      return context.json(
+        await dependencies.repository.discard(
+          context.get('mailContext'),
+          context.req.valid('json'),
+        ),
+        200,
+      )
+    } catch {
+      return problemDetailsResponse(context, {
+        title: 'Discard unavailable',
+        status: 502,
+        detail: 'The discard could not be confirmed. Retry the same request.',
+        code: 'email_discard_failed',
+      })
+    }
   })
   app.openapi(sendEmailRoute, async (context) => {
     try {
