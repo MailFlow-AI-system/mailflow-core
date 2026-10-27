@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import { createIdentityWorkspaceRuntime } from '#modules/identityWorkspace'
 import {
+  assertMailDatabaseRole,
   cleanupAttachments,
   cleanupOrphanObjects,
   createAttachmentRepository,
@@ -29,22 +30,24 @@ const identityWorkspace = await createIdentityWorkspaceRuntime({
   reportEmailDeliveryFailure: (operation) =>
     logger.error({ operation }, 'Account email delivery failed'),
 })
+if (identityWorkspace.workspaces) await assertMailDatabaseRole(database.pool)
 const attachmentRepository = createAttachmentRepository(database.database)
 const objectStorage = createObjectStorage(process.env)
 const attachments = createAttachmentService({
   repository: attachmentRepository,
   storage: objectStorage,
 })
+const outgoingRepository = createOutgoingRepository(database.database)
 const app = createApp({
   config,
   logger,
   observability: telemetry,
   checkDatabase: database.check,
   ...identityWorkspace,
-  mailRepository: createMailMessageRepository(database.database),
+  mailRepository: createMailMessageRepository(database.pool),
   attachments,
   outgoingMail: {
-    repository: createOutgoingRepository(database.database),
+    repository: outgoingRepository,
     deliver: createResendDelivery(process.env),
     resolveAttachments: attachments.resolveReferences,
   },
@@ -58,7 +61,10 @@ const server = serve({
 
 logger.info({ host: config.host, port: config.port }, 'API started')
 const stopAttachmentCleanup = startAttachmentCleanupScheduler({
-  cleanupBatch: () => cleanupAttachments(attachmentRepository, objectStorage),
+  cleanupBatch: async () => {
+    await outgoingRepository.cleanupAbandoned()
+    return cleanupAttachments(attachmentRepository, objectStorage)
+  },
   cleanupPage: (cursor) => cleanupOrphanObjects(attachmentRepository, objectStorage, cursor),
   reportSummary: (summary) => logger.info(summary, 'Attachment cleanup completed'),
   reportFailure: (phase) => logger.error({ phase }, 'Attachment cleanup failed'),

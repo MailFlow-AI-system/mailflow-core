@@ -16,6 +16,13 @@ function setup(authenticated = true, workspace = false) {
   const outgoingMail = {
     repository: {
       reserve: vi.fn(async (value) => ({ ...value, providerId: null, createdAt: new Date() })),
+      beginAttempt: vi.fn(async () => ({ token: 'attempt-token', canReject: true })),
+      markRejected: vi.fn(async () => {}),
+      cleanupAbandoned: vi.fn(async () => 0),
+      discard: vi.fn(async () => ({
+        status: 'discarded' as const,
+        retainedMessageIds: [] as string[],
+      })),
       markSent: vi.fn(async () => {}),
       listSent: vi.fn(async () => []),
     },
@@ -162,4 +169,76 @@ it('rejects malformed JSON without exposing parsing errors', async () => {
     body: '{bad json',
   })
   expect(response.status).toBe(400)
+})
+
+describe('discard HTTP boundary', () => {
+  const body = { messageIds: [input.id], attachmentIds: [] }
+  function discard(
+    app: ReturnType<typeof setup>['app'],
+    value: unknown = body,
+    origin = 'https://mail.example.test',
+  ) {
+    return app.request('/api/v1/mail/discard', {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(value),
+    })
+  }
+  it('scopes cancellation to the verified owner and workspace and returns retained ids', async () => {
+    const { app, outgoingMail } = setup()
+    outgoingMail.repository.discard.mockResolvedValueOnce({
+      status: 'discarded',
+      retainedMessageIds: [input.id],
+    })
+    const response = await discard(app)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: 'discarded', retainedMessageIds: [input.id] })
+    expect(outgoingMail.repository.discard).toHaveBeenCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-a' },
+      body,
+    )
+    expect(response.headers.get('cache-control')).toContain('no-store')
+  })
+  it('requires authentication and a trusted Origin before cancellation', async () => {
+    const authenticated = setup()
+    const unauthenticated = setup(false)
+    expect((await discard(unauthenticated.app)).status).toBe(401)
+    expect((await discard(authenticated.app, body, 'https://evil.test')).status).toBe(403)
+    expect((await discard(authenticated.app, body, '')).status).toBe(403)
+    expect(authenticated.outgoingMail.repository.discard).not.toHaveBeenCalled()
+  })
+  it.each([
+    { messageIds: ['invalid'], attachmentIds: [] },
+    { messageIds: [], attachmentIds: [], workspaceId: 'forged' },
+    { messageIds: Array(101).fill(input.id), attachmentIds: [] },
+  ])('rejects invalid cancellation payloads', async (value) => {
+    const { app, outgoingMail } = setup()
+    expect((await discard(app, value)).status).toBe(400)
+    expect(outgoingMail.repository.discard).not.toHaveBeenCalled()
+  })
+  it('rejects malformed or oversized cancellation bodies before repository work', async () => {
+    const { app, outgoingMail } = setup()
+    const headers = { origin: 'https://mail.example.test', 'content-type': 'application/json' }
+    expect(
+      (await app.request('/api/v1/mail/discard', { method: 'POST', headers, body: '{invalid' }))
+        .status,
+    ).toBe(400)
+    expect(
+      (
+        await app.request('/api/v1/mail/discard', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ payload: 'x'.repeat(20_000) }),
+        })
+      ).status,
+    ).toBe(413)
+    expect(outgoingMail.repository.discard).not.toHaveBeenCalled()
+  })
+  it('retains the local draft through a retryable sanitized cancellation failure', async () => {
+    const { app, outgoingMail } = setup()
+    outgoingMail.repository.discard.mockRejectedValueOnce(new Error('private database metadata'))
+    const response = await discard(app)
+    expect(response.status).toBe(502)
+    expect(await response.text()).not.toContain('private database metadata')
+  })
 })

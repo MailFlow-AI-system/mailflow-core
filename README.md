@@ -26,9 +26,10 @@ API: `http://localhost:8080`; API docs: `/docs` outside production.
 - `bun run db:up`: start local PostgreSQL when needed.
 - `bun run db:migrate`: apply migrations using non-pooled `DIRECT_URL`.
 - `bun run db:seed:mail`: insert sample Inbox messages explicitly.
+- `bun run db:setup:local` / `bun run dev:workspace-sample`: prepare local workspace fixtures.
 
 Tests require disposable PostgreSQL; see [integration configuration](src/modules/identityWorkspace/workspaces/testDatabase.test-support.ts).
-Railway runs migrations before API deployments; image rollback does not revert SQL.
+Railway validates migration history before API deployments; see [migration policy](infrastructure/database/migrations.md).
 Sending and file access require valid workspace membership, even with workspace UI disabled.
 
 [Architecture](https://mailflow-architecture-hub.vercel.app/) · [R2 setup](infrastructure/r2/README.md)

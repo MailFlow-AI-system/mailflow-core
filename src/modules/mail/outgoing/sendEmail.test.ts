@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { sendEmailSchema } from './contract.js'
 import { sendEmail } from './sendEmail.js'
-import type { OutgoingMail, OutgoingRepository } from './types.js'
+import { type OutgoingMail, type OutgoingRepository, ProviderRejectedError } from './types.js'
 
 const scope = { workspaceId: 'workspace-a', userId: 'user' }
 const input = {
@@ -27,6 +27,10 @@ function setup() {
       record.payloadHash ||= value.payloadHash
       return record
     }),
+    beginAttempt: vi.fn(async () => ({ token: 'attempt-token', canReject: true })),
+    markRejected: vi.fn(async () => {}),
+    cleanupAbandoned: vi.fn(async () => 0),
+    discard: vi.fn(async () => ({ status: 'discarded' as const, retainedMessageIds: [] })),
     markSent: vi.fn(async () => {}),
     listSent: vi.fn(async () => []),
   }
@@ -188,4 +192,43 @@ it('does not contact the provider when storage resolution fails', async () => {
   ).rejects.toThrow('unverified')
   expect(deliver).not.toHaveBeenCalled()
   expect(repository.markSent).not.toHaveBeenCalled()
+})
+
+describe('safe delivery lifecycle', () => {
+  it('persists an uncertain attempt before contacting the provider', async () => {
+    const { repository, deliver } = setup()
+    await sendEmail({ repository, deliver }, scope, input)
+    expect(repository.beginAttempt).toHaveBeenCalledWith(scope, input.id)
+    expect(vi.mocked(repository.beginAttempt).mock.invocationCallOrder[0]).toBeLessThan(
+      deliver.mock.invocationCallOrder[0] ?? 0,
+    )
+  })
+  it('records a definitive rejection only with the attempt token', async () => {
+    const { repository, deliver } = setup()
+    deliver.mockRejectedValueOnce(new ProviderRejectedError('Email delivery failed'))
+    await expect(sendEmail({ repository, deliver }, scope, input)).rejects.toThrow(
+      'Email delivery failed',
+    )
+    expect(repository.markRejected).toHaveBeenCalledWith(scope, input.id, {
+      token: 'attempt-token',
+      canReject: true,
+    })
+  })
+  it('retains uncertainty for timeouts and persistence failures', async () => {
+    const { repository, deliver } = setup()
+    deliver.mockRejectedValueOnce(new Error('timeout'))
+    await expect(sendEmail({ repository, deliver }, scope, input)).rejects.toThrow('timeout')
+    expect(repository.markRejected).not.toHaveBeenCalled()
+    vi.mocked(repository.markSent).mockRejectedValueOnce(new Error('database unavailable'))
+    await expect(sendEmail({ repository, deliver }, scope, input)).rejects.toThrow(
+      'database unavailable',
+    )
+    expect(repository.markRejected).not.toHaveBeenCalled()
+  })
+  it('never contacts the provider when cancellation wins the attempt race', async () => {
+    const { repository, deliver } = setup()
+    vi.mocked(repository.beginAttempt).mockRejectedValueOnce(new Error('discarded'))
+    await expect(sendEmail({ repository, deliver }, scope, input)).rejects.toThrow('discarded')
+    expect(deliver).not.toHaveBeenCalled()
+  })
 })

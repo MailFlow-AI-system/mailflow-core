@@ -65,7 +65,10 @@ export function createApp({
     const list =
       ['GET', 'HEAD'].includes(context.req.method) &&
       ['/api/v1/mail/messages', '/api/v1/mail/sent'].includes(context.req.path)
-    if (list) return legacyWorkspaceMode ? blockGlobalWorkspaceMail(context, next) : next()
+    if (list)
+      return context.req.path === '/api/v1/mail/sent' && legacyWorkspaceMode
+        ? blockGlobalWorkspaceMail(context, next)
+        : next()
     return resolveMailContext(context, next)
   })
   app.route('/', createMailContextModule())
@@ -77,7 +80,14 @@ export function createApp({
         isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
       ),
     )
-  if (mailRepository) app.route('/', createMailModule({ repository: mailRepository }))
+  if (mailRepository && workspaces)
+    app.route(
+      '/',
+      createMailModule({
+        repository: mailRepository,
+        resolveWorkspace: (userId, slug) => workspaces.reader.context(userId, slug),
+      }),
+    )
   if (outgoingMail)
     app.route(
       '/',
