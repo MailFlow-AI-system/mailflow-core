@@ -18,6 +18,7 @@
   },
   "include": [
     "test/**/*.ts",
+    "scripts/local/**/*.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
     "database/**/*.ts",

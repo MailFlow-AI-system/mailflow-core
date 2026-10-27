@@ -46,7 +46,9 @@
     "db:check:identity-workspace": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/identityWorkspace.ts",
     "db:check:mail": "infisical run --env=dev --path=/mailflow-core -- drizzle-kit check --config=database/configs/mail.ts",
     "db:seed:mail": "infisical run --env=dev --path=/mailflow-core -- tsx --conditions=development src/modules/mail/seed/run.ts",
-    "email:dev": "email dev --dir src/modules/identityWorkspace/accountEmails/templates --port 4000"
+    "email:dev": "email dev --dir src/modules/identityWorkspace/accountEmails/templates --port 4000",
+    "db:setup:local": "tsx scripts/local/setup.ts",
+    "dev:workspace-sample": "tsx scripts/local/workspaceSample.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.6",
