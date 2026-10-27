@@ -17,8 +17,8 @@ export function localDevelopmentEnvironment(
     SITE_URL: 'http://localhost:4321',
     WEB_APP_URL: 'http://localhost:3000',
     WORKSPACE_WEB_BASE_ORIGIN: 'http://localhost:3000',
-    WORKSPACE_READ_ENABLED: environment.WORKSPACE_READ_ENABLED ?? 'true',
-    WORKSPACE_LOCAL_SWITCHING_ENABLED: environment.WORKSPACE_LOCAL_SWITCHING_ENABLED ?? 'true',
+    WORKSPACE_READ_ENABLED: 'true',
+    WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
     WORKSPACE_SWITCHING_ENABLED: 'false',
   }
 }

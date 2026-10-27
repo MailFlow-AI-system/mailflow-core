@@ -8,6 +8,7 @@ it('uses a local runner context, never development alone, and preserves explicit
     BETTER_AUTH_URL: 'https://api-dev.mailflow-ai.online',
     WEB_APP_URL: 'https://app-dev.mailflow-ai.online',
     WORKSPACE_SWITCHING_ENABLED: 'true',
+    WORKSPACE_LOCAL_SWITCHING_ENABLED: 'false',
   }
   expect(localDevelopmentEnvironment(injected, false)).toEqual(injected)
   expect(localDevelopmentEnvironment(injected, true)).toMatchObject({
