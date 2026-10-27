@@ -56,8 +56,7 @@ See the [Architecture Hub](https://mailflow-architecture-hub.vercel.app/) for de
 ## API and testing
 
 Authentication uses `/api/auth`; routes under `/api/v1` require a session.
-`GET /api/v1/mail/messages` provides paginated search. Inbox messages are currently
-shared by all authenticated users. Errors use Problem Details.
+`GET /api/v1/workspaces/{slug}/mail/messages` provides paginated search scoped to an authorized workspace. Errors use Problem Details.
 
 `bun run test` requires the local PostgreSQL from `bun run db:up`; no variable is needed.
 Set `MAILFLOW_WORKSPACE_TEST_DATABASE_URL` only to use another local database.
@@ -89,3 +88,31 @@ Workers and Collectors do not run migrations.
 
 Failures block deployment; rerunning resumes from committed module ledgers. Keep
 migrations compatible with the running application. Image rollback does not revert SQL.
+
+## Local workspace setup
+
+Use the disposable PostgreSQL from `bun run db:up`. No shared database is supported by these commands.
+With the pinned Node/Bun versions, run:
+
+```bash
+export DIRECT_URL=postgresql://mailflow:mailflow@localhost:5432/mailflow
+bunx tsx src/entrypoints/migrate.ts
+bun run db:setup:local
+bun run dev:workspace-sample
+export DATABASE_URL=postgresql://mailflow_app:mailflow_app_local_only@localhost:5432/mailflow
+bunx tsx --conditions=development src/modules/mail/seed/run.ts --workspace-id <printed-workspaceId>
+```
+
+Setup is idempotent; each sample command creates a new verified user and workspace, without OTP or Resend.
+It prints fictional local credentials and the workspace ID. Provisioning stays in `scripts/local/`, outside the production build.
+Keep `DIRECT_URL` on the migration owner and `DATABASE_URL` on the restricted role.
+
+Set `APP_ENV=development`, `WORKSPACE_READ_ENABLED=true`, `WORKSPACE_LOCAL_SWITCHING_ENABLED=true`,
+`BETTER_AUTH_URL=http://localhost:8080`, `SITE_URL=http://workspace.test:3000`,
+and `WEB_APP_URL=http://<printed-slug>.workspace.test:3000`. The exact Site/Web origins allow the base host and sample tenant locally.
+Keep a local `BETTER_AUTH_SECRET` of at least 32 characters and the required Resend configuration; sample provisioning sends no email.
+Start the API using `bunx tsx --conditions=development src/entrypoints/api.ts` with these environment variables.
+
+Add `127.0.0.1 workspace.test <printed-slug>.workspace.test` to hosts. If the browser runs on Windows, edit the Windows hosts file even when the API runs in WSL.
+The Web needs `VITE_API_BASE_URL=http://localhost:8080`, `VITE_WORKSPACE_BASE_HOST=workspace.test`
+and `VITE_WORKSPACE_LOCAL_SWITCHING_ENABLED=true`. The generic host resolves membership before redirecting to a tenant; mail requires a tenant host.
