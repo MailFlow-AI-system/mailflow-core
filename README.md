@@ -111,7 +111,8 @@ application. Image rollback does not revert SQL.
 Apply the Mail migration before enabling this version. `POST /api/v1/mail/send`
 uses the existing `RESEND_API_KEY` and verified `RESEND_FROM_EMAIL` configuration.
 The sender is controlled by Core; clients cannot choose a From address. Requests
-require a session, a trusted Origin, and JSON with a UUID `id`, `to`, `cc`, `bcc`,
+require a session, an authorized workspace, a trusted Origin, and JSON with a UUID
+`id`, `to`, `cc`, `bcc`,
 `subject`, `html`, `text`, and attachment references (`id` and optional `contentId`).
 The optional `recipientName` is trimmed, limited to 200 characters, and stored
 with the sent copy. Missing or blank names preserve legacy retry hashes.
@@ -120,7 +121,7 @@ is required by Resend. Limits are 50 recipients, 10 attachments including inline
 images, 10,000,000 bytes per file, and 20,000,000 bytes per message.
 
 Keep the same id and content when retrying an uncertain request. Core reserves
-an owner-scoped record before calling Resend and records success only after
+a workspace-and-owner-scoped record before calling Resend and records success only after
 Resend returns an email id. Retrying a confirmed message returns the existing
 result. A changed payload with the same id returns 409. Pending reservations
 older than 23 hours also return 409, preventing a duplicate after Resend's
@@ -131,8 +132,9 @@ sent metadata references the immutable verified objects.
 `GET /api/v1/mail/sent?offset=0` returns only the authenticated user's confirmed
 messages, in pages of twenty with `nextOffset`. Sent means provider acceptance;
 later delivery, bounce, and complaint events require a separate webhook feature.
-The existing workspace guard continues to block these endpoints in workspace
-mode until tenant-scoped mail is implemented.
+Inbox and Sent list queries remain unchanged for the separate list-isolation
+task. Their legacy guard still blocks listing when workspace UI mode is enabled;
+scoped send and attachment operations use the new authority independently.
 
 The outgoing repository integration tests use
 `MAILFLOW_MAIL_INTEGRATION_DATABASE_URL`. Real provider smoke tests should use
@@ -146,10 +148,11 @@ and worker were unnecessary for this interactive flow. Durable reservations
 and provider idempotency protect retries, including failure to persist after
 provider acceptance. Sent copies have their own owner-scoped table because the
 legacy Inbox table is global; inserting outgoing messages there would expose
-private recipients to other users. Workspace mail remains unavailable rather
-than weakening its existing isolation guard. Follow-up work is tenant-scoped
-mail and provider webhook reconciliation for final delivery and old uncertain
-attempts.
+private recipients to other users. Workspace list isolation and read-policy
+activation remain with the separate listing task. This change scopes writes and
+attachment access without changing list SQL, result visibility or query caches.
+Provider webhook reconciliation remains follow-up work for final delivery and old
+uncertain attempts.
 
 Attachment verification currently checks storage metadata, immutable bytes,
 SHA-256, image signatures and bounded archive structure. Antivirus scanning was
@@ -163,6 +166,35 @@ callback GET without an Origin header). Staging and production retain their
 configured origin policy. Do not replace host validation with `localhost*`:
 that pattern can include unrelated domains such as `localhost.example.com`.
 
+## Mail workspace context
+
+`GET /api/v1/mail/context` resolves `{userId, workspace}` from authenticated
+membership even when workspace UI flags are disabled. A valid saved preference
+or sole membership supplies the default. Missing or ambiguous context returns
+`workspace_required`; the resolver never picks the first of several workspaces.
+
+`X-Workspace-Id` is a selector, not authority. Core revalidates membership for
+send, completion, file reads and downloads. `X-Workspace-Identity` detects an
+identity change; a configured tenant-origin slug must match the selected
+workspace. Mail receives this authority through Identity/Workspace's public
+boundary and does not join its tables.
+
+Migration `0005_scope_mail_writes_to_workspace.sql` adds workspace context,
+composite reference constraints and persisted provider keys. Historical rows
+without a reliable mapping retain NULL workspace values and stay visible through
+the existing lists. NOT VALID checks preserve those rows while rejecting new
+INSERT/UPDATE operations without a workspace. Unassigned legacy rows are excluded
+from scoped mutation, download and cleanup; do not backfill from an arbitrary
+membership or current preference. A verified mapping must update the message,
+attachments and associations together. New retries retain their workspace and
+provider key; explicitly mapped older reservations retain the prior provider key.
+
+Apply the migration with the new runtime transition: an older writer that omits
+workspace context will fail closed after it is installed. Do not roll back to a
+pre-workspace storage writer without accounting for these constraints. This does
+not enable list RLS or change listing queries; coordinate those with the listing
+task and its application-role rollout.
+
 ## Attachment storage
 
 The browser requests a short-lived upload URL through authenticated
@@ -174,11 +206,12 @@ can be sent or downloaded. The existing `clean` wire status indicates content
 verification, not an antivirus scan. Inline image references carry an optional
 content ID and are validated against the image signature. Verification failures
 retain the draft for retry. Legacy requests containing Base64 attachment bytes
-are rejected. All operations remain owner-scoped; workspace mail is blocked.
+are rejected. Send and attachment operations require both workspace and owner.
 
 Set the R2 variables in `.env.example` for each environment. Bucket CORS must
-permit the exact Web origin to issue PUT requests with Content-Type; never
-publish the bucket. Apply lifecycle expiration only to `pending/`, not `objects/`.
+permit PUT requests with Content-Type. Development uses `*` CORS; staging and
+production retain their exact Web origins. Buckets remain private. Lifecycle
+expiration applies only to `uploads/` and legacy `pending/`, never to final keys.
 The default local development command uses the development R2 bucket. Optional
 local MinIO requires its own private bucket, CORS policy, local-only credentials,
 and an explicit `R2_ENDPOINT` override.
@@ -193,6 +226,8 @@ local runs. Each run handles at most ten expired-metadata batches and ten orphan
 object pages; the pagination cursor continues on the next run. Shutdown stops
 new batches and awaits current work before closing the database. Referenced send
 attachments are excluded through database locks and a fresh association check.
+Orphan reconciliation recognizes only Mail final-key shapes and uses their
+workspace when checking references; other modules' object keys are ignored.
 
 `bun run attachments:cleanup` remains an operator command for one bounded batch
 and one orphan-object page with runtime configuration. Pass a returned

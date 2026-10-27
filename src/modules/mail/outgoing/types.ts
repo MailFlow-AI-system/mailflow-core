@@ -1,4 +1,7 @@
+import type { MailContext } from '../context/types.js'
 import type { SendEmailInput } from './contract.js'
+
+export class MessageConflictError extends Error {}
 
 export type ProviderAttachment = {
   filename: string
@@ -23,6 +26,7 @@ export type ReservedEmail = {
   payloadHash: string
   providerId: string | null
   createdAt: Date
+  deliveryKey: string | null
 }
 export type SentEmail = {
   id: string
@@ -37,17 +41,17 @@ export type SentEmail = {
 }
 export type OutgoingRepository = {
   reserve: (
-    input: SendEmailInput & { userId: string; payloadHash: string },
+    input: SendEmailInput & MailContext & { payloadHash: string; deliveryKey: string },
   ) => Promise<ReservedEmail>
-  markSent: (userId: string, id: string, providerId: string) => Promise<void>
+  markSent: (context: MailContext, id: string, providerId: string) => Promise<void>
   listSent: (userId: string, offset: number) => Promise<SentEmail[]>
-  findSent?: (userId: string, id: string) => Promise<(SentEmail & { html: string }) | null>
+  findSent?: (context: MailContext, id: string) => Promise<(SentEmail & { html: string }) | null>
 }
 export type OutgoingMail = {
   repository: OutgoingRepository
   deliver: (input: ProviderEmailInput, idempotencyKey: string) => Promise<string>
   resolveAttachments?: (
-    userId: string,
+    context: MailContext,
     references: SendEmailInput['attachments'],
   ) => Promise<ProviderAttachment[]>
 }

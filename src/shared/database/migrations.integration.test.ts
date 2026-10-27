@@ -130,8 +130,8 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
       const id = randomUUID()
       await client.query(
         `INSERT INTO mail.attachment
-         (user_id, id, filename, content_type, size, sha256, status, temporary_key, final_key)
-         VALUES ('migration-owner', $1, 'empty.txt', 'text/plain', 0, $2, 'clean', 'pending/test', 'objects/test')`,
+         (workspace_id, user_id, id, filename, content_type, size, sha256, status, temporary_key, final_key)
+         VALUES ('migration-workspace', 'migration-owner', $1, 'empty.txt', 'text/plain', 0, $2, 'clean', 'pending/test', 'objects/test')`,
         [id, 'a'.repeat(64)],
       )
       const columns = (
@@ -142,6 +142,84 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
       expect(columns).not.toContain('scan_version')
       expect(columns).not.toContain('scanned_at')
       expect(await ledger(client, 'mail_migrations')).toEqual(expectedLedger('mail'))
+    } finally {
+      await client.end()
+    }
+  })
+
+  it('preserves unmapped legacy Mail rows and rejects new unscoped writes without changing listings', async () => {
+    const environment = await createTestDatabase()
+    const client = await connect(environment)
+    try {
+      const previous = readMigrationFiles({
+        migrationsFolder: fileURLToPath(
+          new URL('../../../database/migrations/mail/', import.meta.url),
+        ),
+      }).slice(0, 5)
+      await client.query('CREATE SCHEMA mail_migrations')
+      await client.query(
+        'CREATE TABLE mail_migrations.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+      )
+      for (const migration of previous) {
+        for (const statement of migration.sql) await client.query(statement)
+        await client.query(
+          'INSERT INTO mail_migrations.__drizzle_migrations (hash, created_at) VALUES ($1, $2)',
+          [migration.hash, migration.folderMillis],
+        )
+      }
+      const id = randomUUID()
+      await client.query(
+        `INSERT INTO mail.outgoing_email(user_id,id,payload_hash,"to",cc,bcc,subject,html,text,provider_id,sent_at)
+        VALUES ('legacy-owner',$1,'legacy','["ada@example.test"]','[]','[]','Legacy','Legacy','Legacy','provider',now())`,
+        [id],
+      )
+      await client.query(
+        `INSERT INTO mail.attachment(user_id,id,filename,content_type,size,sha256,status,temporary_key,expires_at)
+        VALUES ('legacy-owner',$1,'legacy.txt','text/plain',0,repeat('a',64),'pending','pending/legacy',now()-interval '1 day')`,
+        [id],
+      )
+      await runMigrations(environment, ['mail'])
+      const { drizzle } = await import('drizzle-orm/node-postgres')
+      const { createOutgoingRepository } = await import(
+        '../../modules/mail/infrastructure/database/outgoingRepository.js'
+      )
+      const { createAttachmentRepository } = await import(
+        '../../modules/mail/infrastructure/database/attachmentRepository.js'
+      )
+      const database = drizzle({ client })
+      expect(await createOutgoingRepository(database).listSent('legacy-owner', 0)).toContainEqual(
+        expect.objectContaining({ id, subject: 'Legacy' }),
+      )
+      expect(
+        (
+          await client.query(
+            'SELECT workspace_id, delivery_key FROM mail.outgoing_email WHERE id=$1',
+            [id],
+          )
+        ).rows,
+      ).toEqual([{ workspace_id: null, delivery_key: null }])
+      const repository = createAttachmentRepository(database)
+      expect(
+        await repository.get({ userId: 'legacy-owner', workspaceId: 'unrelated' }, id),
+      ).toBeNull()
+      expect(await repository.claimExpired(100, 'cleanup')).toEqual([])
+      await expect(
+        client.query('UPDATE mail.outgoing_email SET subject=subject WHERE id=$1', [id]),
+      ).rejects.toThrow('outgoing_email_workspace_required')
+      await expect(
+        client.query(
+          `INSERT INTO mail.attachment(user_id,id,filename,content_type,size,sha256,status,temporary_key)
+        VALUES ('new-owner',$1,'new.txt','text/plain',0,repeat('a',64),'pending','pending/new')`,
+          [randomUUID()],
+        ),
+      ).rejects.toThrow('attachment_workspace_required')
+      expect(
+        (
+          await client.query(
+            "SELECT convalidated FROM pg_constraint WHERE conname IN ('attachment_workspace_required','outgoing_attachment_workspace_required','outgoing_email_workspace_required')",
+          )
+        ).rows,
+      ).toEqual([{ convalidated: false }, { convalidated: false }, { convalidated: false }])
     } finally {
       await client.end()
     }

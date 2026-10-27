@@ -1,10 +1,24 @@
-import { and, asc, eq, gt, inArray, isNull, lte, ne, notExists, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import {
   AttachmentQuotaError,
   type AttachmentRecord,
   type AttachmentRepository,
 } from '../../attachments/types.js'
+import { assertMailContext } from '../../context/types.js'
 import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
 
 const leaseMilliseconds = 120_000
@@ -13,9 +27,10 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
   return {
     create: async (record) =>
       database.transaction(async (transaction) => {
+        assertMailContext(record)
         // Serialize only this owner's quota check and insert; unrelated owners remain independent.
         await transaction.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${`mail.attachment.create:${record.userId}`}, 0))`,
+          sql`select pg_advisory_xact_lock(hashtextextended(${`mail.attachment.create:${record.workspaceId}:${record.userId}`}, 0))`,
         )
         const [active] = await transaction
           .select({ count: sql<number>`count(*)::int` })
@@ -23,6 +38,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
           .where(
             and(
               eq(attachments.userId, record.userId),
+              eq(attachments.workspaceId, record.workspaceId),
               gt(attachments.expiresAt, new Date()),
               notExists(
                 transaction
@@ -31,6 +47,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
                   .where(
                     and(
                       eq(outgoingEmailAttachments.userId, attachments.userId),
+                      eq(outgoingEmailAttachments.workspaceId, attachments.workspaceId),
                       eq(outgoingEmailAttachments.attachmentId, attachments.id),
                     ),
                   ),
@@ -43,20 +60,25 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         if (!created) throw new Error('Attachment could not be created')
         return created
       }),
-    get: async (userId, id) => {
+    get: async (context, id) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       const [record] = await database
         .select()
         .from(attachments)
         .where(
           and(
             eq(attachments.userId, userId),
+            eq(attachments.workspaceId, workspaceId),
             eq(attachments.id, id),
             ne(attachments.status, 'deleting'),
           ),
         )
       return record ?? null
     },
-    claimCompletion: async (userId, id, token) => {
+    claimCompletion: async (context, id, token) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       const now = new Date()
       const [record] = await database
         .update(attachments)
@@ -64,6 +86,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         .where(
           and(
             eq(attachments.userId, userId),
+            eq(attachments.workspaceId, workspaceId),
             eq(attachments.id, id),
             inArray(attachments.status, ['pending', 'error']),
             gt(attachments.expiresAt, now),
@@ -73,7 +96,9 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         .returning()
       return record ?? null
     },
-    finishCompletion: async (userId, id, token, patch) => {
+    finishCompletion: async (context, id, token, patch) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       if (!['clean', 'rejected', 'error'].includes(patch.status))
         throw new Error('Invalid attachment transition')
       const [record] = await database
@@ -82,6 +107,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         .where(
           and(
             eq(attachments.userId, userId),
+            eq(attachments.workspaceId, workspaceId),
             eq(attachments.id, id),
             eq(attachments.claimToken, token),
             gt(attachments.claimExpiresAt, new Date()),
@@ -99,6 +125,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
           .from(attachments)
           .where(
             and(
+              isNotNull(attachments.workspaceId),
               lte(attachments.expiresAt, now),
               or(isNull(attachments.claimToken), lte(attachments.claimExpiresAt, now)),
               notExists(
@@ -108,6 +135,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
                   .where(
                     and(
                       eq(outgoingEmailAttachments.userId, attachments.userId),
+                      eq(outgoingEmailAttachments.workspaceId, attachments.workspaceId),
                       eq(outgoingEmailAttachments.attachmentId, attachments.id),
                     ),
                   ),
@@ -123,6 +151,7 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         const associated = await transaction
           .selectDistinct({
             userId: outgoingEmailAttachments.userId,
+            workspaceId: outgoingEmailAttachments.workspaceId,
             attachmentId: outgoingEmailAttachments.attachmentId,
           })
           .from(outgoingEmailAttachments)
@@ -131,17 +160,18 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               ...rows.map((row) =>
                 and(
                   eq(outgoingEmailAttachments.userId, row.userId),
+                  eq(outgoingEmailAttachments.workspaceId, row.workspaceId as string),
                   eq(outgoingEmailAttachments.attachmentId, row.id),
                 ),
               ),
             ),
           )
         const protectedIds = new Set(
-          associated.map((row) => JSON.stringify([row.userId, row.attachmentId])),
+          associated.map((row) => JSON.stringify([row.workspaceId, row.userId, row.attachmentId])),
         )
         const claimed: AttachmentRecord[] = []
         for (const row of rows) {
-          if (protectedIds.has(JSON.stringify([row.userId, row.id]))) continue
+          if (protectedIds.has(JSON.stringify([row.workspaceId, row.userId, row.id]))) continue
           const [record] = await transaction
             .update(attachments)
             .set({
@@ -149,18 +179,27 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               claimToken: token,
               claimExpiresAt: new Date(now.getTime() + leaseMilliseconds),
             })
-            .where(and(eq(attachments.userId, row.userId), eq(attachments.id, row.id)))
+            .where(
+              and(
+                eq(attachments.workspaceId, row.workspaceId as string),
+                eq(attachments.userId, row.userId),
+                eq(attachments.id, row.id),
+              ),
+            )
             .returning()
           if (record) claimed.push(record)
         }
         return claimed
       }),
-    deleteClaimed: async (userId, id, token) => {
+    deleteClaimed: async (context, id, token) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       const rows = await database
         .delete(attachments)
         .where(
           and(
             eq(attachments.userId, userId),
+            eq(attachments.workspaceId, workspaceId),
             eq(attachments.id, id),
             eq(attachments.status, 'deleting'),
             eq(attachments.claimToken, token),
@@ -170,24 +209,32 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
         .returning({ id: attachments.id })
       return rows.length === 1
     },
-    isAssociated: async (userId, id) => {
+    isAssociated: async (context, id) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       const [association] = await database
         .select({ attachmentId: outgoingEmailAttachments.attachmentId })
         .from(outgoingEmailAttachments)
         .where(
           and(
             eq(outgoingEmailAttachments.userId, userId),
+            eq(outgoingEmailAttachments.workspaceId, workspaceId),
             eq(outgoingEmailAttachments.attachmentId, id),
           ),
         )
         .limit(1)
       return Boolean(association)
     },
-    isFinalKeyReferenced: async (key) => {
+    isFinalKeyReferenced: async (key, workspaceId) => {
       const [record] = await database
         .select({ id: attachments.id })
         .from(attachments)
-        .where(eq(attachments.finalKey, key))
+        .where(
+          and(
+            eq(attachments.finalKey, key),
+            workspaceId ? eq(attachments.workspaceId, workspaceId) : undefined,
+          ),
+        )
         .limit(1)
       return Boolean(record)
     },

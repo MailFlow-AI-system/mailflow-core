@@ -1,15 +1,18 @@
 import { createHash } from 'node:crypto'
+import { assertMailContext, type MailContext } from '../context/types.js'
 import type { SendEmailInput } from './contract.js'
-import type { OutgoingMail, ProviderAttachment } from './types.js'
+import { MessageConflictError, type OutgoingMail, type ProviderAttachment } from './types.js'
 
-export class MessageConflictError extends Error {}
+export { MessageConflictError } from './types.js'
 export async function sendEmail(
   { repository, deliver, resolveAttachments }: OutgoingMail,
-  userId: string,
+  context: MailContext,
   input: SendEmailInput,
 ) {
+  assertMailContext(context)
+  const deliveryKey = `mail/${encodeURIComponent(context.workspaceId)}/${encodeURIComponent(context.userId)}/${input.id}`
   const payloadHash = createHash('sha256').update(JSON.stringify(input)).digest('hex')
-  const record = await repository.reserve({ ...input, userId, payloadHash })
+  const record = await repository.reserve({ ...input, ...context, payloadHash, deliveryKey })
   if (record.payloadHash !== payloadHash)
     throw new MessageConflictError('This id belongs to a different message')
   if (!record.providerId) {
@@ -19,10 +22,13 @@ export async function sendEmail(
     let attachments: ProviderAttachment[] = []
     if (input.attachments.length) {
       if (!resolveAttachments) throw new Error('Attachment storage unavailable')
-      attachments = await resolveAttachments(userId, input.attachments)
+      attachments = await resolveAttachments(context, input.attachments)
     }
-    const providerId = await deliver({ ...input, attachments }, `mail/${userId}/${input.id}`)
-    await repository.markSent(userId, input.id, providerId)
+    const providerId = await deliver(
+      { ...input, attachments },
+      record.deliveryKey ?? `mail/${context.userId}/${input.id}`,
+    )
+    await repository.markSent(context, input.id, providerId)
   }
   return { id: record.id, status: 'sent' as const }
 }

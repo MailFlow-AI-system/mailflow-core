@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { parseMailFinalKey } from './attachmentKeys.js'
 import type { AttachmentRepository, ObjectStorage } from './types.js'
 
 export async function cleanupAttachments(
@@ -10,10 +11,12 @@ export async function cleanupAttachments(
   let deleted = 0
   for (const record of records) {
     try {
-      if (await repository.isAssociated(record.userId, record.id)) continue
+      if (!record.workspaceId) continue
+      const context = { workspaceId: record.workspaceId, userId: record.userId }
+      if (await repository.isAssociated(context, record.id)) continue
       await storage.delete(record.temporaryKey)
       if (record.finalKey) await storage.delete(record.finalKey)
-      if (await repository.deleteClaimed(record.userId, record.id, token)) deleted++
+      if (await repository.deleteClaimed(context, record.id, token)) deleted++
     } catch {
       // The lease expires so a later cleanup can retry the same objects.
     }
@@ -29,7 +32,9 @@ export async function cleanupOrphanObjects(
   const page = await storage.listOldFinalKeys(cursor)
   let deleted = 0
   for (const key of page.keys) {
-    if (!(await repository.isFinalKeyReferenced(key))) {
+    const scope = parseMailFinalKey(key)
+    if (!scope) continue
+    if (!(await repository.isFinalKeyReferenced(key, scope.workspaceId ?? undefined))) {
       await storage.delete(key)
       deleted++
     }

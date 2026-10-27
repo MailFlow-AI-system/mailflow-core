@@ -1,6 +1,19 @@
 {
   "rules": [
     {
+      "id": "mailflow-abandoned-workspace-upload",
+      "enabled": true,
+      "conditions": {
+        "prefix": "uploads/"
+      },
+      "deleteObjectsTransition": {
+        "condition": {
+          "type": "Age",
+          "maxAge": 86400
+        }
+      }
+    },
+    {
       "id": "mailflow-abandoned-pending-upload",
       "enabled": true,
       "conditions": {
