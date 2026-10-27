@@ -49,6 +49,7 @@ describe('mail context API', () => {
     )
     const unavailable = await setup({ hasAuthority: false }).app.request('/api/v1/mail/context')
     expect(unavailable.status).toBe(503)
+    expect((await setup({ hasAuthority: false }).app.request('/api/v1/mail/sent')).status).toBe(503)
     expect((await unavailable.json()).code).toBe('workspace_unavailable')
     expect(
       (
@@ -59,11 +60,11 @@ describe('mail context API', () => {
       ).status,
     ).toBe(503)
   })
-  it('keeps the Sent guard and removes global Inbox while allowing context', async () => {
+  it('removes the legacy guard and global Inbox while allowing authorized context', async () => {
     const { app } = setup({ workspaceMode: true })
     expect((await app.request('/api/v1/mail/context')).status).toBe(200)
     expect((await app.request('/api/v1/mail/messages')).status).toBe(404)
     expect((await app.request('/api/v1/mail/messages', { method: 'HEAD' })).status).toBe(404)
-    expect((await app.request('/api/v1/mail/sent')).status).toBe(503)
+    expect((await app.request('/api/v1/mail/sent')).status).toBe(404)
   })
 })

@@ -288,7 +288,7 @@ integration('attachment PostgreSQL persistence', () => {
       expect.objectContaining({ id: row.id }),
     )
     await outgoing.markSent(context(row.userId), input.id, 'provider')
-    const [message] = await outgoing.listSent(row.userId, 0)
+    const [message] = await outgoing.listSent(context(row.userId), 0)
     expect(message?.attachments).toContainEqual(
       expect.objectContaining({ id: row.id, filename: 'hello.txt', size: 5 }),
     )
