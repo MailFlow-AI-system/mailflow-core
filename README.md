@@ -1,11 +1,11 @@
 # MailFlow Core
 
-Modular backend with a Hono API, a separate worker, and PostgreSQL.
+Hono/TypeScript backend with PostgreSQL, an API and a separate worker.
+Email delivery uses Resend; private attachments use Cloudflare R2.
 
-## Local development
+## Development
 
-Requires Node.js 24.20.0, Bun 1.4.1, Infisical CLI, and access to `MailFlow-AI`.
-Use Docker if you need local PostgreSQL.
+Requires Node.js 24.20.0, Bun 1.4.1 and Infisical CLI.
 
 ```bash
 bun install --frozen-lockfile
@@ -15,235 +15,20 @@ bun run db:migrate
 bun run dev
 ```
 
-Local service and migration commands load Infisical `dev` secrets from `/mailflow-core`.
-See [.env.example](.env.example) for configuration; `.env` files are not loaded automatically.
-The API defaults to `http://localhost:8080`, with `/docs` and `/openapi.json`
-available outside production.
+Infisical project: `MailFlow-AI`, environment `dev`, path `/mailflow-core`.
+Configuration: [.env.example](.env.example). `.env` files are not loaded.
+API: `http://localhost:8080`; API docs: `/docs` outside production.
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `bun run check` | Lint, formatting, types, tests, and build |
-| `bun run test` | Run tests |
-| `bun run build` | Compile production output |
-| `bun run start` / `bun run start:worker` | Run compiled processes |
-| `bun run dev:worker` | Start the development worker |
-| `bun run db:up` / `bun run db:down` | Start or stop local PostgreSQL |
-| `bun run db:generate:<module>` / `bun run db:check:<module>` | Generate or check migrations |
-| `bun run db:migrate` / `bun run db:migrate:<module>` | Migrate all modules or one module |
-| `bun run db:seed:mail` | Insert 33 fictional Inbox messages idempotently |
-| `bun run deploy:check` / `bun run deploy:configure` | Check or apply Railway API migration policy |
+- `bun run check`: lint, formatting, types, tests and build.
+- `bun run dev:worker`: start the worker.
+- `bun run db:up`: start local PostgreSQL when needed.
+- `bun run db:migrate`: apply migrations using non-pooled `DIRECT_URL`.
+- `bun run db:seed:mail`: insert sample Inbox messages explicitly.
 
-## Migrations
+Tests require disposable PostgreSQL; see [integration configuration](src/modules/identityWorkspace/workspaces/testDatabase.test-support.ts).
+Railway runs migrations before API deployments; image rollback does not revert SQL.
+Sending and file access require valid workspace membership, even with workspace UI disabled.
 
-Module suffixes are `identity-workspace` and `mail`. The application uses
-`DATABASE_URL`; migrations require non-pooled `DIRECT_URL` for the same database,
-with no fallback. Apply migrations before using the API; seeding is explicit.
-
-Register modules in `src/shared/database/migrationModules.ts` in execution order.
-The runner and Drizzle configs share folder and ledger metadata. Each module owns
-its schema and migration history; tests catch unregistered folders and missing files.
-
-## Structure
-
-Business slices live in `src/modules/`, infrastructure in `src/shared/`, process
-commands in `src/entrypoints/`, and migration configs and SQL in `database/`.
-
-Access other modules through public `index.ts` exports. Cross-module database access,
-joins, foreign keys, and transactions are prohibited. Modules receive the process database client.
-See the [Architecture Hub](https://mailflow-architecture-hub.vercel.app/) for design decisions.
-
-## API and testing
-
-Authentication uses `/api/auth`; routes under `/api/v1` require a session.
-`GET /api/v1/mail/messages` provides paginated search. Inbox messages are currently
-shared by all authenticated users. Errors use Problem Details.
-
-`bun run test` requires the local PostgreSQL from `bun run db:up`; no variable is needed.
-Set `MAILFLOW_WORKSPACE_TEST_DATABASE_URL` only to use another local database.
-Workspace suites apply Identity migrations and create the restricted
-`workspace_test_app` role, so RLS is tested without `SUPERUSER` or `BYPASSRLS`.
-Other integration tests opt in through:
-
-- `MAILFLOW_AUTH_INTEGRATION_DATABASE_URL`
-- `MAILFLOW_MAIL_INTEGRATION_DATABASE_URL`
-- `MAILFLOW_MIGRATIONS_TEST_DATABASE_URL`
-
-Use disposable test databases. Auth and Inbox require applied migrations; the migration
-suite requires a disposable instance with permissions to create/drop databases and
-create event triggers. CI also runs `bash scripts/smokeImage.sh` against the final image.
-
-Telemetry uses optional `OTEL_EXPORTER_OTLP_ENDPOINT`. With Docker, validate the
-Collector using `bun run observability:collector:validate`.
-
-## Railway deployment
-
-The API must run migrations before every deployment. The versioned policy in
-`src/shared/deployment/railwayMigrations.ts` maps `development` to development,
-`staging` to staging, and `main` to production using explicit environment and API
-service ids. It configures the pre-deploy command `node dist/entrypoints/migrate.js`
-with a 300-second timeout, and `/health/ready` with a 300-second timeout.
-Workers and Collectors do not run migrations.
-
-With a Railway account API token available as `RAILWAY_API_TOKEN`, run:
-
-```bash
-bun run deploy:check
-bun run deploy:configure
-bun run deploy:check
-```
-
-The check is read-only and exits nonzero on drift. Configuration validates every
-API destination before changing anything, updates only migration and healthcheck
-settings, and verifies them afterward. It does not deploy or execute SQL. Enable
-Wait for CI on each API service. CI checks migrations against a disposable database;
-the Railway pre-deploy command applies them to the deployed environment.
-
-The image must include the runner and SQL files, with Infisical-synced `DIRECT_URL`
-pointing to that environment's database. Before activation, verify the Neon branch,
-connection targets, permissions, and ledgers. Failures block deployment; rerunning
-resumes from committed module ledgers. Keep migrations compatible with the running
-application. Image rollback does not revert SQL.
-
-## Outgoing email
-
-Apply the Mail migration before enabling this version. `POST /api/v1/mail/send`
-uses the existing `RESEND_API_KEY` and verified `RESEND_FROM_EMAIL` configuration.
-The sender is controlled by Core; clients cannot choose a From address. Requests
-require a session, an authorized workspace, a trusted Origin, and JSON with a UUID
-`id`, `to`, `cc`, `bcc`,
-`subject`, `html`, `text`, and attachment references (`id` and optional `contentId`).
-The optional `recipientName` is trimmed, limited to 200 characters, and stored
-with the sent copy. Missing or blank names preserve legacy retry hashes.
-Inline images use a `contentId` and verified image content. At least one To recipient
-is required by Resend. Limits are 50 recipients, 10 attachments including inline
-images, 10,000,000 bytes per file, and 20,000,000 bytes per message.
-
-Keep the same id and content when retrying an uncertain request. Core reserves
-a workspace-and-owner-scoped record before calling Resend and records success only after
-Resend returns an email id. Retrying a confirmed message returns the existing
-result. A changed payload with the same id returns 409. Pending reservations
-older than 23 hours also return 409, preventing a duplicate after Resend's
-24-hour idempotency retention expires; inspect the provider before starting a
-new send in that case. Attachment bytes remain in private object storage, and
-sent metadata references the immutable verified objects.
-
-`GET /api/v1/mail/sent?offset=0` returns only the authenticated user's confirmed
-messages, in pages of twenty with `nextOffset`. Sent means provider acceptance;
-later delivery, bounce, and complaint events require a separate webhook feature.
-Inbox and Sent list queries remain unchanged for the separate list-isolation
-task. Their legacy guard still blocks listing when workspace UI mode is enabled;
-scoped send and attachment operations use the new authority independently.
-
-The outgoing repository integration tests use
-`MAILFLOW_MAIL_INTEGRATION_DATABASE_URL`. Real provider smoke tests should use
-`delivered@resend.dev`, never an arbitrary recipient.
-
-## Listening
-
-Outgoing delivery uses the existing Resend SDK and a synchronous API response
-so the Composer can report the provider result immediately. A separate queue
-and worker were unnecessary for this interactive flow. Durable reservations
-and provider idempotency protect retries, including failure to persist after
-provider acceptance. Sent copies have their own owner-scoped table because the
-legacy Inbox table is global; inserting outgoing messages there would expose
-private recipients to other users. Workspace list isolation and read-policy
-activation remain with the separate listing task. This change scopes writes and
-attachment access without changing list SQL, result visibility or query caches.
-Provider webhook reconciliation remains follow-up work for final delivery and old
-uncertain attempts.
-
-Attachment verification currently checks storage metadata, immutable bytes,
-SHA-256, image signatures and bounded archive structure. Antivirus scanning was
-removed from this feature scope; a corrective migration removes its unused
-metadata without rewriting the migration already applied in development.
-
-Development authentication accepts HTTP and HTTPS origins on any port for the
-exact loopback hosts `localhost`, `127.0.0.1`, and `[::1]`. The same policy covers
-credentialed CORS, Better Auth requests, and recovery callbacks (including the
-callback GET without an Origin header). Staging and production retain their
-configured origin policy. Do not replace host validation with `localhost*`:
-that pattern can include unrelated domains such as `localhost.example.com`.
-
-## Mail workspace context
-
-`GET /api/v1/mail/context` resolves `{userId, workspace}` from authenticated
-membership even when workspace UI flags are disabled. A valid saved preference
-or sole membership supplies the default. Missing or ambiguous context returns
-`workspace_required`; the resolver never picks the first of several workspaces.
-
-`X-Workspace-Id` is a selector, not authority. Core revalidates membership for
-send, completion, file reads and downloads. `X-Workspace-Identity` detects an
-identity change; a configured tenant-origin slug must match the selected
-workspace. Mail receives this authority through Identity/Workspace's public
-boundary and does not join its tables.
-
-Migration `0005_scope_mail_writes_to_workspace.sql` adds workspace context,
-composite reference constraints and persisted provider keys. Historical rows
-without a reliable mapping retain NULL workspace values and stay visible through
-the existing lists. NOT VALID checks preserve those rows while rejecting new
-INSERT/UPDATE operations without a workspace. Unassigned legacy rows are excluded
-from scoped mutation, download and cleanup; do not backfill from an arbitrary
-membership or current preference. A verified mapping must update the message,
-attachments and associations together. New retries retain their workspace and
-provider key; explicitly mapped older reservations retain the prior provider key.
-
-Apply the migration with the new runtime transition: an older writer that omits
-workspace context will fail closed after it is installed. Do not roll back to a
-pre-workspace storage writer without accounting for these constraints. This does
-not enable list RLS or change listing queries; coordinate those with the listing
-task and its application-role rollout.
-
-## Attachment storage
-
-The browser requests a short-lived upload URL through authenticated
-`POST /api/v1/mail/attachments`, uploads directly with the returned headers, and
-calls `POST /api/v1/mail/attachments/{id}/complete`. Completion copies the upload
-to an immutable private key and verifies the byte count, metadata and SHA-256.
-`GET /api/v1/mail/attachments/{id}` returns its state; only verified attachments
-can be sent or downloaded. The existing `clean` wire status indicates content
-verification, not an antivirus scan. Inline image references carry an optional
-content ID and are validated against the image signature. Verification failures
-retain the draft for retry. Legacy requests containing Base64 attachment bytes
-are rejected. Send and attachment operations require both workspace and owner.
-
-Set the R2 variables in `.env.example` for each environment. Bucket CORS must
-permit PUT requests with Content-Type. Development uses `*` CORS; staging and
-production retain their exact Web origins. Buckets remain private. Lifecycle
-expiration applies only to `uploads/` and legacy `pending/`, never to final keys.
-The default local development command uses the development R2 bucket. Optional
-local MinIO requires its own private bucket, CORS policy, local-only credentials,
-and an explicit `R2_ENDPOINT` override.
-
-Versioned bucket policies and environment mapping are in `infrastructure/r2/`.
-Runtime credentials are distinct for each environment and never reach Web Workers.
-Antivirus integration is deferred; no scanner process or scanner configuration
-is required to upload, send, or retrieve files.
-
-The API starts cleanup asynchronously and repeats it hourly without overlapping
-local runs. Each run handles at most ten expired-metadata batches and ten orphan
-object pages; the pagination cursor continues on the next run. Shutdown stops
-new batches and awaits current work before closing the database. Referenced send
-attachments are excluded through database locks and a fresh association check.
-Orphan reconciliation recognizes only Mail final-key shapes and uses their
-workspace when checking references; other modules' object keys are ignored.
-
-`bun run attachments:cleanup` remains an operator command for one bounded batch
-and one orphan-object page with runtime configuration. Pass a returned
-`nextCursor` as its argument to continue pagination. The staging promotion must
-still validate the combined deployed application and migration pipeline.
-
-The migration policy uses Railway's API rather than a shared root deployment file
-that could also affect worker services. Native config-as-code is deprecated with
-removal announced for December 1, 2026; a full IaC adoption would require broader
-resource ownership and CI changes. The explicit, idempotent policy fixes the three
-existing API instances without that migration. Re-run the policy check when service
-ids or deployment settings change. Actual SQL execution must be validated during
-the next staging promotion.
-
-Recipient names are optional display metadata for the Composition, separate from
-the validated To/Cc/Bcc delivery addresses. The additive Mail migration gives
-existing messages an empty name so clients can fall back to their email addresses.
-A single display-name field does not infer contacts or names for individual
-addresses in a multi-recipient message.
+[Architecture](https://mailflow-architecture-hub.vercel.app/) · [R2 setup](infrastructure/r2/README.md)
