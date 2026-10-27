@@ -3,7 +3,7 @@
     {
       "id": "mailflow-browser-upload",
       "allowed": {
-        "origins": ["https://app.mailflow-ai.online"],
+        "origins": ["https://app.mailflow-ai.online", "https://*.app.mailflow-ai.online"],
         "methods": ["PUT"],
         "headers": ["content-type"]
       },
