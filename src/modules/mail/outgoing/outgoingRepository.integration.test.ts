@@ -14,7 +14,10 @@ integration('outgoing mail PostgreSQL persistence', () => {
   const owner = `outgoing-persistence-${randomUUID()}`
   const pending = `outgoing-pending-${randomUUID()}`
   const other = `outgoing-other-${randomUUID()}`
+  const context = (userId = owner, workspaceId = 'workspace-a') => ({ userId, workspaceId })
   const input = {
+    workspaceId: 'workspace-a',
+    deliveryKey: 'test-delivery-key',
     id: '00000000-0000-4000-8000-000000000001',
     to: ['ada@example.test'],
     cc: [],
@@ -41,7 +44,7 @@ integration('outgoing mail PostgreSQL persistence', () => {
   })
   it('lists only confirmed messages owned by the authenticated user', async () => {
     await repository.reserve({ ...input, userId: pending, payloadHash: pending })
-    await sendEmail({ repository, deliver: async () => 'provider-id' }, owner, input)
+    await sendEmail({ repository, deliver: async () => 'provider-id' }, context(owner), input)
     expect(await repository.listSent(other, 0)).toEqual([])
     expect(await repository.listSent(pending, 0)).toEqual([])
     expect(await repository.listSent(owner, 0)).toEqual([
@@ -53,17 +56,33 @@ integration('outgoing mail PostgreSQL persistence', () => {
       }),
     ])
   })
+  it('rejects cross-workspace retries and retains the existing user-scoped Sent listing', async () => {
+    const dependencies = { repository, deliver: async () => 'provider-id' }
+    await sendEmail(dependencies, context(), input)
+    await expect(sendEmail(dependencies, context(owner, 'workspace-b'), input)).rejects.toThrow(
+      'another workspace',
+    )
+    await repository.markSent(context(owner, 'workspace-b'), input.id, 'wrong-provider')
+    expect(
+      (await repository.reserve({ ...input, ...context(), payloadHash: 'ignored' })).providerId,
+    ).toBe('provider-id')
+    await sendEmail(dependencies, context(owner, 'workspace-b'), { ...input, id: randomUUID() })
+    expect(await repository.listSent(owner, 0)).toHaveLength(2)
+    expect(await repository.findSent?.(context(owner, 'workspace-b'), input.id)).toBeNull()
+  })
   it('reserves atomically, preserves the original content and rejects conflicting retries', async () => {
     await repository.reserve({ ...input, userId: owner, payloadHash: 'original' })
     const reserved = await repository.reserve({
       ...input,
       subject: 'Changed',
       userId: owner,
+      workspaceId: 'workspace-a',
+      deliveryKey: 'test-delivery-key',
       payloadHash: 'different',
     })
     expect(reserved.payloadHash).toBe('original')
     await expect(
-      sendEmail({ repository, deliver: async () => 'provider-id' }, owner, input),
+      sendEmail({ repository, deliver: async () => 'provider-id' }, context(owner), input),
     ).rejects.toThrow('different message')
   })
   it('persists one sent copy when retrying and paginates in deterministic order', async () => {
@@ -75,11 +94,11 @@ integration('outgoing mail PostgreSQL persistence', () => {
         return 'provider-id'
       },
     }
-    await sendEmail(dependencies, owner, input)
-    await sendEmail(dependencies, owner, input)
+    await sendEmail(dependencies, context(owner), input)
+    await sendEmail(dependencies, context(owner), input)
     expect(deliveries).toBe(1)
     for (let index = 2; index <= 22; index++) {
-      await sendEmail(dependencies, owner, {
+      await sendEmail(dependencies, context(owner), {
         ...input,
         id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
       })
@@ -92,11 +111,14 @@ integration('outgoing mail PostgreSQL persistence', () => {
   })
   it('persists the optional recipient name in Sent and keeps legacy unnamed sends valid', async () => {
     const dependencies = { repository, deliver: async () => 'provider-id' }
-    await sendEmail(dependencies, owner, { ...input, recipientName: 'Ada Lovelace' })
+    await sendEmail(dependencies, context(owner), { ...input, recipientName: 'Ada Lovelace' })
     expect(await repository.listSent(owner, 0)).toEqual([
       expect.objectContaining({ recipientName: 'Ada Lovelace', to: input.to }),
     ])
-    await sendEmail(dependencies, owner, { ...input, id: '00000000-0000-4000-8000-000000000002' })
+    await sendEmail(dependencies, context(owner), {
+      ...input,
+      id: '00000000-0000-4000-8000-000000000002',
+    })
     expect(await repository.listSent(owner, 0)).toContainEqual(
       expect.objectContaining({ recipientName: '' }),
     )

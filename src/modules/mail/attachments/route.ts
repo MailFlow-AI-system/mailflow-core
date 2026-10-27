@@ -131,7 +131,7 @@ export function createAttachmentModule(
   app.openapi(create, async (context) => {
     try {
       return context.json(
-        await service.create(context.get('authSession').user.id, context.req.valid('json')),
+        await service.create(context.get('mailContext'), context.req.valid('json')),
         200,
       )
     } catch (error) {
@@ -151,7 +151,7 @@ export function createAttachmentModule(
     }
   })
   app.openapi(complete, async (context) => {
-    const owner = context.get('authSession').user.id
+    const owner = context.get('mailContext')
     const id = context.req.valid('param').id
     if (!(await service.get(owner, id)))
       return problemDetailsResponse(context, {
@@ -181,10 +181,7 @@ export function createAttachmentModule(
     }
   })
   app.openapi(get, async (context) => {
-    const record = await service.get(
-      context.get('authSession').user.id,
-      context.req.valid('param').id,
-    )
+    const record = await service.get(context.get('mailContext'), context.req.valid('param').id)
     if (!record)
       return problemDetailsResponse(context, {
         title: 'Not found',
@@ -196,10 +193,7 @@ export function createAttachmentModule(
   })
   app.get('/api/v1/mail/attachments/:id/download', async (context) => {
     if (!params.safeParse(context.req.param()).success) return context.notFound()
-    const bytes = await service.download(
-      context.get('authSession').user.id,
-      context.req.param('id'),
-    )
+    const bytes = await service.download(context.get('mailContext'), context.req.param('id'))
     if (!bytes) return context.notFound()
     return new Response(new Uint8Array(bytes), {
       headers: {

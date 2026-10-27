@@ -36,6 +36,7 @@ it('keeps workspace capabilities dark by default without requiring workspace dat
   const runtime = await createIdentityWorkspaceRuntime({ ...dependencies, environment: {} })
   expect(runtime.auth).toBe(vi.mocked(createAuth).mock.results[0]?.value)
   expect(runtime.allowedAuthOrigins).toEqual(authConfig.allowedOrigins)
+  expect(runtime.mailWorkspaceAuthority?.resolve).toBeTypeOf('function')
   expect(runtime.workspaces).toBeUndefined()
   expect(runtime.workspaceSelection).toBeUndefined()
   expect(runtime.workspaceEntry).toBeUndefined()

@@ -26,6 +26,7 @@ it('returns only public metadata and hides object keys', async () => {
   const record = {
     id: '00000000-0000-4000-8000-000000000001',
     userId: 'owner',
+    workspaceId: 'workspace-a',
     filename: 'a.txt',
     contentType: 'text/plain',
     size: 1,
@@ -48,6 +49,7 @@ it('returns only public metadata and hides object keys', async () => {
   }
   const app = new OpenAPIHono()
   app.use('*', async (context, next) => {
+    context.set('mailContext', { workspaceId: 'workspace-a', userId: 'owner' })
     context.set('authSession', { user: { id: 'owner' }, session: { id: 'session' } })
     await next()
   })
@@ -94,6 +96,7 @@ it('returns a safe quota error without exposing internal details', async () => {
   }
   const app = new OpenAPIHono()
   app.use('*', async (context, next) => {
+    context.set('mailContext', { workspaceId: 'workspace-a', userId: 'owner' })
     context.set('authSession', { user: { id: 'owner' }, session: { id: 'session' } })
     await next()
   })
@@ -120,6 +123,7 @@ it('exposes expired upload state and attachment TTL for recovery', async () => {
   const record = {
     id: '00000000-0000-4000-8000-000000000001',
     userId: 'owner',
+    workspaceId: 'workspace-a',
     filename: 'a.txt',
     contentType: 'text/plain',
     size: 0,
@@ -142,6 +146,7 @@ it('exposes expired upload state and attachment TTL for recovery', async () => {
   }
   const app = new OpenAPIHono()
   app.use('*', async (context, next) => {
+    context.set('mailContext', { workspaceId: 'workspace-a', userId: 'owner' })
     context.set('authSession', { user: { id: 'owner' }, session: { id: 'session' } })
     await next()
   })

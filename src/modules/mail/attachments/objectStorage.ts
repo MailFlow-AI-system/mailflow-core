@@ -63,12 +63,17 @@ export function createObjectStorage(
   const expiresIn = 300
   return {
     async listOldFinalKeys(cursor) {
+      const prefixes = ['workspaces/', 'objects/owners/']
+      const position: { prefix: number; token?: string } = cursor
+        ? JSON.parse(cursor)
+        : { prefix: 0 }
+      if (![0, 1].includes(position.prefix)) throw new Error('Invalid cleanup cursor')
       const page = await client.send(
         new ListObjectsV2Command({
           Bucket: config.bucket,
-          Prefix: 'objects/',
+          Prefix: prefixes[position.prefix],
           MaxKeys: 1000,
-          ContinuationToken: cursor,
+          ContinuationToken: position.token,
         }),
       )
       const cutoff = Date.now() - 24 * 60 * 60 * 1000
@@ -76,7 +81,16 @@ export function createObjectStorage(
         keys: (page.Contents ?? [])
           .filter((item) => item.Key && item.LastModified && item.LastModified.getTime() < cutoff)
           .map((item) => item.Key as string),
-        ...(page.NextContinuationToken ? { nextCursor: page.NextContinuationToken } : {}),
+        ...(page.NextContinuationToken
+          ? {
+              nextCursor: JSON.stringify({
+                prefix: position.prefix,
+                token: page.NextContinuationToken,
+              }),
+            }
+          : position.prefix === 0
+            ? { nextCursor: JSON.stringify({ prefix: 1 }) }
+            : {}),
       }
     },
     async presignPut(key, contentType) {
