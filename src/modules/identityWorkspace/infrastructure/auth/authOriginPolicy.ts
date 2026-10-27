@@ -18,6 +18,20 @@ export function createAuthOriginPolicy(config: AuthConfig): AuthOriginPolicy {
       )
         return false
       if (config.appEnv === 'development' && loopbackHosts.includes(url.hostname)) return true
+      const web = new URL(config.webAppURL)
+      const api = new URL(config.baseURL)
+      if (
+        config.appEnv === 'development' &&
+        api.protocol === 'http:' &&
+        loopbackHosts.includes(api.hostname) &&
+        (web.hostname === 'localhost' ||
+          /^[a-z0-9]+(?:-[a-z0-9]+)*\.localhost$/.test(web.hostname)) &&
+        web.protocol === 'http:' &&
+        url.protocol === 'http:' &&
+        url.port === web.port &&
+        /^[a-z0-9]+(?:-[a-z0-9]+)*\.localhost$/.test(url.hostname)
+      )
+        return true
       const deployment = config.workspaceDeployment
       if (!deployment || url.protocol !== 'https:' || url.port) return false
       if (url.hostname === deployment.baseHost) return true
