@@ -12,7 +12,6 @@ import {
   installAuthRoutes,
 } from '#modules/identityWorkspace'
 import {
-  blockGlobalWorkspaceMail,
   createAttachmentModule,
   createMailContextMiddleware,
   createMailContextModule,
@@ -54,21 +53,12 @@ export function createApp({
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
-  const legacyWorkspaceMode = Boolean(
-    workspaces || onboarding || workspaceSelection || workspaceEntry,
-  )
   const resolveMailContext = createMailContextMiddleware(mailWorkspaceAuthority, {
     isAllowedOrigin: isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
     ...(mailWorkspaceBaseOrigin ? { workspaceBaseOrigin: mailWorkspaceBaseOrigin } : {}),
   })
   app.use('/api/v1/mail/*', async (context, next) => {
-    const list =
-      ['GET', 'HEAD'].includes(context.req.method) &&
-      ['/api/v1/mail/messages', '/api/v1/mail/sent'].includes(context.req.path)
-    if (list)
-      return context.req.path === '/api/v1/mail/sent' && legacyWorkspaceMode
-        ? blockGlobalWorkspaceMail(context, next)
-        : next()
+    if (context.req.path === '/api/v1/mail/messages') return next()
     return resolveMailContext(context, next)
   })
   app.route('/', createMailContextModule())

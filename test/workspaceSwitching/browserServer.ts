@@ -10,6 +10,7 @@ import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/worksp
 import {
   assertMailDatabaseRole,
   createMailMessageRepository,
+  createOutgoingRepository,
 } from '../../src/modules/mail/index.js'
 import { inWorkspaceTransaction } from '../../src/modules/mail/infrastructure/database/workspaceTransaction.js'
 import { seedMail } from '../../src/modules/mail/seed/seedMail.js'
@@ -22,7 +23,7 @@ await migrate(drizzle(fixture.admin), {
   migrationsTable: '__drizzle_migrations',
 })
 await fixture.admin.query(
-  'GRANT USAGE ON SCHEMA mail TO workspace_test_app; GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO workspace_test_app',
+  'GRANT USAGE ON SCHEMA mail TO workspace_test_app; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mail TO workspace_test_app',
 )
 await assertMailDatabaseRole(fixture.pool)
 for (const [workspaceId, name] of [
@@ -43,6 +44,38 @@ for (const [workspaceId, name] of [
     ),
   )
 }
+const fixtureOutgoing = createOutgoingRepository(drizzle(fixture.admin))
+async function resetSent() {
+  await fixture.admin.query('DELETE FROM mail.outgoing_email WHERE user_id=ANY($1::text[])', [
+    [fixture.userId, fixture.otherId],
+  ])
+  for (const [workspaceId, userId, label, count] of [
+    [fixture.acme, fixture.userId, 'Acme', 21],
+    [fixture.northwind, fixture.userId, 'Northwind', 2],
+    [fixture.northwind, fixture.otherId, 'Foreign Northwind', 1],
+  ] as const) {
+    for (let index = 1; index <= count; index++) {
+      const id = randomUUID()
+      const context = { workspaceId, userId }
+      await fixtureOutgoing.reserve({
+        ...context,
+        id,
+        payloadHash: `fixture-${id}`,
+        deliveryKey: `fixture-${id}`,
+        to: ['recipient@example.test'],
+        cc: [],
+        bcc: [],
+        recipientName: `${label} recipient`,
+        subject: `${label} sent message ${String(index).padStart(2, '0')}`,
+        html: `<p>${label} private sent content</p>`,
+        text: `${label} private sent content`,
+        attachments: [],
+      })
+      await fixtureOutgoing.markSent(context, id, `fixture-provider-${id}`)
+    }
+  }
+}
+await resetSent()
 const port = 3003
 const host = `${fixture.acmeSlug}.workspace.test`
 const targetHost = `${fixture.northwindSlug}.workspace.test`
@@ -154,6 +187,12 @@ const app = createApp({
     },
   },
   mailRepository: createMailMessageRepository(fixture.pool),
+  mailWorkspaceBaseOrigin: 'http://workspace.test:3003',
+  outgoingMail: {
+    repository: createOutgoingRepository(drizzle(fixture.pool)),
+    // Keep browser acceptance inside the isolated fixture; never call an external provider.
+    deliver: async (message) => `fixture-provider-${message.id}`,
+  },
 })
 // This server is loopback-only, requires the isolated test DB, and is not built/deployed.
 app.get('/__telemetry', (context) => {
@@ -216,7 +255,8 @@ app.post('/__fixture/control', async (context) => {
     revokeAfterSelection = false
     failNextEntry = false
     failNextBudget = false
-  } else if (action === 'fail-next') failNext = true
+  } else if (action === 'reset-sent') await resetSent()
+  else if (action === 'fail-next') failNext = true
   else if (action === 'fail-next-entry') failNextEntry = true
   else if (action === 'fail-next-budget') failNextBudget = true
   else if (action === 'expire-session')
@@ -251,6 +291,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
         await telemetry.observability.shutdown()
         await fixture.admin.query('DELETE FROM mail.message WHERE workspace_id=ANY($1::text[])', [
           [fixture.acme, fixture.northwind],
+        ])
+        await fixture.admin.query('DELETE FROM mail.outgoing_email WHERE user_id=ANY($1::text[])', [
+          [fixture.userId, fixture.otherId],
         ])
         await fixture.close()
         process.exit(0)

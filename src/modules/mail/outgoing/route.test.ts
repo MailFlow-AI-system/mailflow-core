@@ -1,5 +1,6 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
+import type { MailWorkspaceAuthority } from '#modules/identityWorkspace'
 import { createApp } from '../../../app.js'
 
 const input = {
@@ -28,6 +29,10 @@ function setup(authenticated = true, workspace = false) {
     },
     deliver: vi.fn(async () => 'provider-id'),
   }
+  const resolve = vi.fn<MailWorkspaceAuthority['resolve']>(async () => ({
+    status: 'ok',
+    workspace: { id: 'workspace-a', name: 'Workspace', slug: 'workspace-a', role: 'owner' },
+  }))
   const app = createApp({
     config: {
       appEnv: 'development',
@@ -50,18 +55,9 @@ function setup(authenticated = true, workspace = false) {
           authenticated ? { session: { id: 'session' }, user: { id: 'owner' } } : null,
       },
     },
-    mailWorkspaceAuthority: {
-      resolve: vi.fn(async () => ({
-        status: 'ok' as const,
-        workspace: {
-          id: 'workspace-a',
-          name: 'Workspace',
-          slug: 'workspace-a',
-          role: 'owner' as const,
-        },
-      })),
-    },
-    allowedAuthOrigins: ['https://mail.example.test'],
+    mailWorkspaceAuthority: { resolve },
+    mailWorkspaceBaseOrigin: 'https://app.example.test',
+    allowedAuthOrigins: ['https://mail.example.test', 'https://alpha.app.example.test'],
     outgoingMail,
     ...(workspace ? { workspaces: { reader: {} as never, consumeBudget: vi.fn() } } : {}),
   })
@@ -71,7 +67,7 @@ function setup(authenticated = true, workspace = false) {
       headers: { 'content-type': 'application/json', origin },
       body: JSON.stringify(body),
     })
-  return { app, outgoingMail, send }
+  return { app, outgoingMail, send, resolve }
 }
 describe('outgoing mail HTTP', () => {
   it('sends authenticated mail and returns a private confirmed response', async () => {
@@ -122,14 +118,17 @@ describe('outgoing mail HTTP', () => {
   it('lists only the current user confirmed messages with bounded pagination', async () => {
     const { app, outgoingMail } = setup()
     expect((await app.request('/api/v1/mail/sent?offset=20')).status).toBe(200)
-    expect(outgoingMail.repository.listSent).toHaveBeenCalledWith('owner', 20)
+    expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-a' },
+      20,
+    )
     expect((await app.request('/api/v1/mail/sent?offset=-1')).status).toBe(400)
   })
-  it('authorizes scoped writes while retaining the legacy list guard', async () => {
+  it('authorizes scoped writes and Sent even with workspace UI enabled', async () => {
     const { send, app, outgoingMail } = setup(true, true)
     expect((await send()).status).toBe(200)
     expect(outgoingMail.deliver).toHaveBeenCalledOnce()
-    expect((await app.request('/api/v1/mail/sent')).status).toBe(503)
+    expect((await app.request('/api/v1/mail/sent')).status).toBe(200)
   })
 })
 
@@ -240,5 +239,75 @@ describe('discard HTTP boundary', () => {
     const response = await discard(app)
     expect(response.status).toBe(502)
     expect(await response.text()).not.toContain('private database metadata')
+  })
+})
+
+describe('workspace-scoped Sent HTTP', () => {
+  it('returns verified scope headers for both context discovery and Sent', async () => {
+    const { app, outgoingMail, resolve } = setup()
+    for (const path of ['/api/v1/mail/context', '/api/v1/mail/sent']) {
+      const response = await app.request(path, {
+        headers: {
+          'X-Workspace-Identity': 'owner',
+          'X-Workspace-Id': 'workspace-a',
+          Origin: 'https://mail.example.test',
+        },
+      })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('X-Workspace-Identity')).toBe('owner')
+      expect(response.headers.get('X-Workspace-Id')).toBe('workspace-a')
+      expect(response.headers.get('cache-control')).toContain('private')
+      expect(response.headers.get('cache-control')).toContain('no-store')
+      expect(response.headers.get('access-control-expose-headers')).toContain('X-Workspace-Id')
+    }
+    expect(resolve).toHaveBeenCalledWith('owner', { workspaceId: 'workspace-a' })
+    expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-a' },
+      0,
+    )
+  })
+  it('uses the selected workspace rather than the account default for Sent', async () => {
+    const { app, outgoingMail, resolve } = setup()
+    resolve.mockResolvedValueOnce({
+      status: 'ok',
+      workspace: { id: 'workspace-b', name: 'Beta', slug: 'beta', role: 'member' },
+    })
+    const response = await app.request('/api/v1/mail/sent?offset=5', {
+      headers: { 'X-Workspace-Id': 'workspace-b', 'X-Workspace-Identity': 'owner' },
+    })
+    expect(response.status).toBe(200)
+    expect(resolve).toHaveBeenCalledWith('owner', { workspaceId: 'workspace-b' })
+    expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-b' },
+      5,
+    )
+    expect(response.headers.get('X-Workspace-Id')).toBe('workspace-b')
+  })
+  it('requires an unambiguous authorized workspace even with workspace UI disabled', async () => {
+    const { app, outgoingMail, resolve } = setup()
+    for (const status of ['required', 'unavailable'] as const) {
+      resolve.mockResolvedValueOnce({ status })
+      const response = await app.request('/api/v1/mail/sent')
+      expect(response.status).toBe(status === 'required' ? 409 : 403)
+      expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
+    }
+  })
+  it('rejects a changed actor and revalidates selector against the tenant Origin', async () => {
+    const { app, outgoingMail, resolve } = setup()
+    expect(
+      (await app.request('/api/v1/mail/sent', { headers: { 'X-Workspace-Identity': 'foreign' } }))
+        .status,
+    ).toBe(403)
+    expect(resolve).not.toHaveBeenCalled()
+    resolve.mockResolvedValueOnce({ status: 'unavailable' })
+    expect(
+      (
+        await app.request('/api/v1/mail/sent', {
+          headers: { Origin: 'https://alpha.app.example.test', 'X-Workspace-Id': 'workspace-b' },
+        })
+      ).status,
+    ).toBe(403)
+    expect(resolve).toHaveBeenCalledWith('owner', { workspaceId: 'workspace-b', slug: 'alpha' })
+    expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
   })
 })

@@ -126,10 +126,7 @@ export function createOutgoingMailModule(
   })
   app.openapi(sentEmailsRoute, async (context) => {
     const offset = context.req.valid('query').offset
-    const messages = await dependencies.repository.listSent(
-      context.get('authSession').user.id,
-      offset,
-    )
+    const messages = await dependencies.repository.listSent(context.get('mailContext'), offset)
     return context.json(
       {
         items: messages

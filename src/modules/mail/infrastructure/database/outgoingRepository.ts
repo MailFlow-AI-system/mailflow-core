@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { assertMailContext } from '../../context/types.js'
+import { assertMailContext, type MailContext } from '../../context/types.js'
 import {
   MessageConflictError,
   type OutgoingRepository,
@@ -21,7 +21,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
     text: outgoingEmails.text,
     sentAt: outgoingEmails.sentAt,
   }
-  async function sentAttachments(userId: string, messageIds: string[]) {
+  async function sentAttachments(context: MailContext, messageIds: string[]) {
     const byMessage = new Map<string, SentAttachment[]>()
     if (!messageIds.length) return byMessage
     const rows = await database
@@ -37,7 +37,8 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
       .from(outgoingEmailAttachments)
       .where(
         and(
-          eq(outgoingEmailAttachments.userId, userId),
+          eq(outgoingEmailAttachments.userId, context.userId),
+          eq(outgoingEmailAttachments.workspaceId, context.workspaceId),
           inArray(outgoingEmailAttachments.messageId, messageIds),
         ),
       )
@@ -352,16 +353,23 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           ),
         )
     },
-    listSent: async (userId, offset) => {
+    listSent: async (context, offset) => {
+      assertMailContext(context)
       const rows = await database
         .select(sentSelection)
         .from(outgoingEmails)
-        .where(and(eq(outgoingEmails.userId, userId), isNotNull(outgoingEmails.providerId)))
+        .where(
+          and(
+            eq(outgoingEmails.userId, context.userId),
+            eq(outgoingEmails.workspaceId, context.workspaceId),
+            isNotNull(outgoingEmails.providerId),
+          ),
+        )
         .orderBy(desc(outgoingEmails.sentAt), desc(outgoingEmails.id))
         .limit(21)
         .offset(offset)
       const metadata = await sentAttachments(
-        userId,
+        context,
         rows.map(({ id }) => id),
       )
       return rows.map((row) => ({ ...row, attachments: metadata.get(row.id) ?? [] }))
@@ -381,7 +389,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           ),
         )
       if (!record) return null
-      const metadata = await sentAttachments(userId, [record.id])
+      const metadata = await sentAttachments(context, [record.id])
       return { ...record, attachments: metadata.get(record.id) ?? [] }
     },
   }
