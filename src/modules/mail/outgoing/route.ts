@@ -64,11 +64,7 @@ export function createOutgoingMailModule(
   app.openapi(sendEmailRoute, async (context) => {
     try {
       return context.json(
-        await sendEmail(
-          dependencies,
-          context.get('authSession').user.id,
-          context.req.valid('json'),
-        ),
+        await sendEmail(dependencies, context.get('mailContext'), context.req.valid('json')),
         200,
       )
     } catch (error) {

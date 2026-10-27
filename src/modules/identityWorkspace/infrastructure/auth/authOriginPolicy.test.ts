@@ -134,3 +134,36 @@ it('reflects allowed development ports in credentialed CORS and blocks lookalike
   })
   expect(rejected.headers.get('access-control-allow-origin')).toBeNull()
 })
+
+it('allows the workspace selector for trusted Mail preflight only', async () => {
+  const app = new Hono()
+  installAuthRoutes(app, {
+    auth: { handler: async () => new Response(), api: { getSession: async () => null } },
+    allowedOrigins: config.allowedOrigins,
+    isAllowedOrigin: createAuthOriginPolicy(config),
+  })
+  const request = (origin: string) =>
+    app.request('/api/v1/mail/send', {
+      method: 'OPTIONS',
+      headers: {
+        origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-workspace-id,x-workspace-identity',
+      },
+    })
+  const accepted = await request('https://acme.app.staging.example.com')
+  expect(accepted.status).toBe(204)
+  expect(accepted.headers.get('access-control-allow-origin')).toBe(
+    'https://acme.app.staging.example.com',
+  )
+  expect(accepted.headers.get('access-control-allow-credentials')).toBe('true')
+  expect(
+    accepted.headers
+      .get('access-control-allow-headers')
+      ?.toLowerCase()
+      .split(',')
+      .map((value) => value.trim()),
+  ).toContain('x-workspace-id')
+  const rejected = await request('https://evil.example.com')
+  expect(rejected.headers.get('access-control-allow-origin')).toBeNull()
+})

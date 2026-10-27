@@ -1,4 +1,14 @@
-import { index, jsonb, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import {
+  check,
+  index,
+  jsonb,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import { mailSchema } from './messages.js'
 
 export const outgoingEmails = mailSchema.table(
@@ -6,6 +16,8 @@ export const outgoingEmails = mailSchema.table(
   {
     id: uuid('id').notNull(),
     userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    deliveryKey: text('delivery_key'),
     payloadHash: text('payload_hash').notNull(),
     to: jsonb('to').$type<string[]>().notNull(),
     cc: jsonb('cc').$type<string[]>().notNull(),
@@ -20,6 +32,12 @@ export const outgoingEmails = mailSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.id] }),
+    uniqueIndex('outgoing_email_workspace_identity_idx').on(
+      table.workspaceId,
+      table.userId,
+      table.id,
+    ),
+    check('outgoing_email_workspace_required', sql`${table.workspaceId} is not null`),
     index('outgoing_email_user_sent_idx').on(table.userId, table.sentAt.desc(), table.id.desc()),
   ],
 )

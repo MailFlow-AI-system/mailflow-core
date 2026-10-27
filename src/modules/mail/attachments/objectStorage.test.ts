@@ -1,7 +1,29 @@
-import { describe, expect, it } from 'vitest'
+import { S3Client } from '@aws-sdk/client-s3'
+import { describe, expect, it, vi } from 'vitest'
 import { loadStorageConfig } from './objectStorage.js'
 
 describe('object storage configuration', () => {
+  it('paginates scoped objects before the exact legacy Mail prefix', async () => {
+    const request = vi
+      .spyOn(S3Client.prototype, 'send')
+      .mockResolvedValue({ Contents: [] } as never)
+    try {
+      const { createObjectStorage } = await import('./objectStorage.js')
+      const storage = createObjectStorage({
+        R2_ACCOUNT_ID: 'test',
+        R2_BUCKET_NAME: 'test',
+        R2_ACCESS_KEY_ID: 'test',
+        R2_SECRET_ACCESS_KEY: 'test',
+      })
+      const first = await storage.listOldFinalKeys()
+      expect(request.mock.calls[0]?.[0].input).toMatchObject({ Prefix: 'workspaces/' })
+      const second = await storage.listOldFinalKeys(first.nextCursor)
+      expect(request.mock.calls[1]?.[0].input).toMatchObject({ Prefix: 'objects/owners/' })
+      expect(second.nextCursor).toBeUndefined()
+    } finally {
+      request.mockRestore()
+    }
+  })
   it('requires all credentials and derives the private R2 endpoint', () => {
     const environment = {
       R2_ACCOUNT_ID: 'account',

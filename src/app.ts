@@ -14,6 +14,8 @@ import {
 import {
   blockGlobalWorkspaceMail,
   createAttachmentModule,
+  createMailContextMiddleware,
+  createMailContextModule,
   createMailModule,
   createOutgoingMailModule,
 } from '#modules/mail'
@@ -37,6 +39,8 @@ export function createApp({
   onboarding,
   workspaceSelection,
   workspaceEntry,
+  mailWorkspaceAuthority,
+  mailWorkspaceBaseOrigin,
   observability = createNoopObservability('mailflow-core-api'),
 }: AppDependencies) {
   const app = new OpenAPIHono()
@@ -50,8 +54,21 @@ export function createApp({
     ...(onboarding ? { onboarding } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
-  if (workspaces || onboarding || workspaceSelection || workspaceEntry)
-    app.use('/api/v1/mail/*', blockGlobalWorkspaceMail)
+  const legacyWorkspaceMode = Boolean(
+    workspaces || onboarding || workspaceSelection || workspaceEntry,
+  )
+  const resolveMailContext = createMailContextMiddleware(mailWorkspaceAuthority, {
+    isAllowedOrigin: isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
+    ...(mailWorkspaceBaseOrigin ? { workspaceBaseOrigin: mailWorkspaceBaseOrigin } : {}),
+  })
+  app.use('/api/v1/mail/*', async (context, next) => {
+    const list =
+      ['GET', 'HEAD'].includes(context.req.method) &&
+      ['/api/v1/mail/messages', '/api/v1/mail/sent'].includes(context.req.path)
+    if (list) return legacyWorkspaceMode ? blockGlobalWorkspaceMail(context, next) : next()
+    return resolveMailContext(context, next)
+  })
+  app.route('/', createMailContextModule())
   if (attachments)
     app.route(
       '/',

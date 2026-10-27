@@ -18,6 +18,7 @@ import type {
 } from './runtimeTypes.js'
 import { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 import { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
+import { createMailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
 import { workspaceReadsEnabled, workspaceSwitchingMode } from './workspaces/runtimeConfig.js'
 import { assertWorkspaceSelectionDatabaseRole } from './workspaces/selectionDatabaseRole.js'
 import { createWorkspaceEntryReader } from './workspaces/workspaceEntryReader.js'
@@ -52,6 +53,10 @@ export async function createIdentityWorkspaceRuntime({
   })
   return {
     auth,
+    mailWorkspaceAuthority: createMailWorkspaceAuthority(pool),
+    ...(environment.WORKSPACE_WEB_BASE_ORIGIN
+      ? { mailWorkspaceBaseOrigin: loadWorkspaceWebBaseOrigin(environment) }
+      : {}),
     allowedAuthOrigins: authConfig.allowedOrigins,
     isAllowedAuthOrigin: isAllowedOrigin,
     ...(reads

@@ -9,6 +9,7 @@ import type {
   OnboardingWorkerDependencies,
 } from './onboarding/types.js'
 import type { WorkspaceEntryDependencies } from './workspaces/entryTypes.js'
+import type { MailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
 import type {
   WorkspaceRouteDependencies,
   WorkspaceSelectionDependencies,
@@ -25,6 +26,8 @@ export type IdentityWorkspaceRuntimeDependencies = {
 
 export type IdentityWorkspaceRuntime = {
   auth: AuthService
+  mailWorkspaceAuthority?: MailWorkspaceAuthority
+  mailWorkspaceBaseOrigin?: string
   allowedAuthOrigins: string[]
   isAllowedAuthOrigin?: AuthOriginPolicy
   workspaces?: WorkspaceRouteDependencies

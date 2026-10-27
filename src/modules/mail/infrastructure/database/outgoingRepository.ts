@@ -1,6 +1,11 @@
 import { and, asc, desc, eq, gt, inArray, isNotNull } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type { OutgoingRepository, SentAttachment } from '../../outgoing/types.js'
+import { assertMailContext } from '../../context/types.js'
+import {
+  MessageConflictError,
+  type OutgoingRepository,
+  type SentAttachment,
+} from '../../outgoing/types.js'
 import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
 import { outgoingEmails } from './schema/outgoingEmails.js'
 
@@ -46,6 +51,8 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
   return {
     reserve: async ({
       userId,
+      workspaceId,
+      deliveryKey,
       id,
       payloadHash,
       to,
@@ -58,9 +65,23 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
       attachments: references,
     }) =>
       database.transaction(async (transaction) => {
+        if (!workspaceId || !userId) throw new Error('Mail workspace context is required')
         const inserted = await transaction
           .insert(outgoingEmails)
-          .values({ userId, id, payloadHash, to, cc, bcc, recipientName, subject, html, text })
+          .values({
+            userId,
+            workspaceId,
+            deliveryKey,
+            id,
+            payloadHash,
+            to,
+            cc,
+            bcc,
+            recipientName,
+            subject,
+            html,
+            text,
+          })
           .onConflictDoNothing()
           .returning({ id: outgoingEmails.id })
         const [record] = await transaction
@@ -69,11 +90,15 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
             payloadHash: outgoingEmails.payloadHash,
             providerId: outgoingEmails.providerId,
             createdAt: outgoingEmails.createdAt,
+            workspaceId: outgoingEmails.workspaceId,
+            deliveryKey: outgoingEmails.deliveryKey,
           })
           .from(outgoingEmails)
           .where(and(eq(outgoingEmails.userId, userId), eq(outgoingEmails.id, id)))
           .for('update')
         if (!record) throw new Error('Email reservation unavailable')
+        if (record.workspaceId !== workspaceId)
+          throw new MessageConflictError('The message belongs to another workspace')
         // Existing reservations already hold the immutable association snapshot, including after a failed send.
         if (!inserted.length || !references.length) return record
         const ids = references.map((reference) => reference.id)
@@ -85,6 +110,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           .where(
             and(
               eq(attachments.userId, userId),
+              eq(attachments.workspaceId, workspaceId),
               inArray(attachments.id, ids),
               eq(attachments.status, 'clean'),
               gt(attachments.expiresAt, new Date()),
@@ -101,6 +127,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
             if (!row?.finalKey) throw new Error('Attachment unavailable')
             return {
               userId,
+              workspaceId,
               messageId: id,
               attachmentId: row.id,
               position,
@@ -115,11 +142,18 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
         )
         return record
       }),
-    markSent: async (userId, id, providerId) => {
+    markSent: async (context, id, providerId) => {
+      assertMailContext(context)
       await database
         .update(outgoingEmails)
         .set({ providerId, sentAt: new Date() })
-        .where(and(eq(outgoingEmails.userId, userId), eq(outgoingEmails.id, id)))
+        .where(
+          and(
+            eq(outgoingEmails.userId, context.userId),
+            eq(outgoingEmails.workspaceId, context.workspaceId),
+            eq(outgoingEmails.id, id),
+          ),
+        )
     },
     listSent: async (userId, offset) => {
       const rows = await database
@@ -135,7 +169,9 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
       )
       return rows.map((row) => ({ ...row, attachments: metadata.get(row.id) ?? [] }))
     },
-    findSent: async (userId, id) => {
+    findSent: async (context, id) => {
+      assertMailContext(context)
+      const { userId, workspaceId } = context
       const [record] = await database
         .select({ ...sentSelection, html: outgoingEmails.html })
         .from(outgoingEmails)
@@ -143,6 +179,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           and(
             eq(outgoingEmails.userId, userId),
             eq(outgoingEmails.id, id),
+            eq(outgoingEmails.workspaceId, workspaceId),
             isNotNull(outgoingEmails.providerId),
           ),
         )
