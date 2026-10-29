@@ -38,6 +38,11 @@ function setup() {
   return { repository, deliver, record }
 }
 describe('sendEmail', () => {
+  it('persists the configured sender used by the provider', async () => {
+    const { repository, deliver } = setup()
+    await sendEmail({ repository, deliver, senderEmail: 'sender@example.test' }, scope, input)
+    expect(repository.beginAttempt).toHaveBeenCalledWith(scope, input.id, 'sender@example.test')
+  })
   it('separates opaque workspace and owner segments in provider idempotency keys', async () => {
     const { repository, deliver, record } = setup()
     vi.mocked(repository.reserve).mockImplementationOnce(async (value) => ({
@@ -198,7 +203,7 @@ describe('safe delivery lifecycle', () => {
   it('persists an uncertain attempt before contacting the provider', async () => {
     const { repository, deliver } = setup()
     await sendEmail({ repository, deliver }, scope, input)
-    expect(repository.beginAttempt).toHaveBeenCalledWith(scope, input.id)
+    expect(repository.beginAttempt).toHaveBeenCalledWith(scope, input.id, undefined)
     expect(vi.mocked(repository.beginAttempt).mock.invocationCallOrder[0]).toBeLessThan(
       deliver.mock.invocationCallOrder[0] ?? 0,
     )

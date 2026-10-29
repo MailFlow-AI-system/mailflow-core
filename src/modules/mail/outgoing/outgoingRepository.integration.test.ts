@@ -4,6 +4,7 @@ import { Client, Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createOutgoingRepository } from '../infrastructure/database/outgoingRepository.js'
 import { sendEmail } from './sendEmail.js'
+import { ProviderRejectedError } from './types.js'
 
 const databaseUrl = process.env.MAILFLOW_MAIL_INTEGRATION_DATABASE_URL
 const integration = databaseUrl ? describe : describe.skip
@@ -56,6 +57,70 @@ integration('outgoing mail PostgreSQL persistence', () => {
       }),
     ])
   })
+  it('does not claim a sender when an uncertain delivery is retried with a changed sender', async () => {
+    const initial = {
+      repository,
+      senderEmail: 'old@example.test',
+      deliver: async () => {
+        throw new Error('delivery uncertain')
+      },
+    }
+    await expect(sendEmail(initial, context(), input)).rejects.toThrow('delivery uncertain')
+    await sendEmail(
+      { repository, senderEmail: 'new@example.test', deliver: async () => 'provider-id' },
+      context(),
+      input,
+    )
+    expect(await repository.findSent?.(context(), input.id)).toMatchObject({ senderEmail: null })
+  })
+
+  it('retains the sender for uncertain retries when configuration did not change', async () => {
+    await expect(
+      sendEmail(
+        {
+          repository,
+          senderEmail: 'same@example.test',
+          deliver: async () => {
+            throw new Error('delivery uncertain')
+          },
+        },
+        context(),
+        input,
+      ),
+    ).rejects.toThrow('delivery uncertain')
+    await sendEmail(
+      { repository, senderEmail: 'same@example.test', deliver: async () => 'provider-id' },
+      context(),
+      input,
+    )
+    expect(await repository.findSent?.(context(), input.id)).toMatchObject({
+      senderEmail: 'same@example.test',
+    })
+  })
+  it('records the new sender after a definitively rejected attempt', async () => {
+    await expect(
+      sendEmail(
+        {
+          repository,
+          senderEmail: 'old@example.test',
+          deliver: async () => {
+            throw new ProviderRejectedError('rejected')
+          },
+        },
+        context(),
+        input,
+      ),
+    ).rejects.toThrow('rejected')
+    await sendEmail(
+      { repository, senderEmail: 'new@example.test', deliver: async () => 'provider-id' },
+      context(),
+      input,
+    )
+    expect(await repository.findSent?.(context(), input.id)).toMatchObject({
+      senderEmail: 'new@example.test',
+    })
+  })
+
   it('rejects cross-workspace retries and lists only the selected workspace', async () => {
     const dependencies = { repository, deliver: async () => 'provider-id' }
     await sendEmail(dependencies, context(), input)

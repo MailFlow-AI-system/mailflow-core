@@ -1,0 +1,1 @@
+ALTER TABLE "mail"."outgoing_email" ADD COLUMN "sender_email" text;
