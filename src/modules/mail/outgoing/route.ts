@@ -1,4 +1,4 @@
-import { OpenAPIHono } from '@hono/zod-openapi'
+import { OpenAPIHono, z } from '@hono/zod-openapi'
 import { bodyLimit } from 'hono/body-limit'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import { discardEmailRoute, sendEmailRoute, sentEmailsRoute } from './contract.js'
@@ -123,6 +123,33 @@ export function createOutgoingMailModule(
         code: conflict ? 'email_conflict' : 'email_send_failed',
       })
     }
+  })
+  app.get('/api/v1/mail/sent/:id', async (context) => {
+    const id = context.req.param('id')
+    if (!z.uuid().safeParse(id).success) return context.notFound()
+    const message = await dependencies.repository.findSent?.(context.get('mailContext'), id)
+    if (!message) return context.notFound()
+    return context.json({
+      id: message.id,
+      subject: message.subject,
+      senderName: message.senderEmail ? 'MailFlow' : null,
+      senderEmail: message.senderEmail ?? null,
+      to: message.to,
+      cc: message.cc,
+      bcc: message.bcc,
+      html: message.html,
+      text: message.text,
+      date: (message.sentAt ?? message.createdAt)?.toISOString() ?? null,
+      attachments: (message.attachments ?? []).map(
+        ({ id, filename, contentType, size, contentId }) => ({
+          id,
+          filename,
+          contentType,
+          size,
+          contentId,
+        }),
+      ),
+    })
   })
   app.openapi(sentEmailsRoute, async (context) => {
     const offset = context.req.valid('query').offset

@@ -163,3 +163,34 @@ it('exposes expired upload state and attachment TTL for recovery', async () => {
     size: 0,
   })
 })
+
+it('serves only verified safe image bytes inline and preserves download filenames', async () => {
+  const { OpenAPIHono } = await import('@hono/zod-openapi')
+  const id = '00000000-0000-4000-8000-000000000001'
+  const image = Buffer.from('89504e470d0a1a0a', 'hex')
+  const record = { id, filename: 'hello.png', contentType: 'image/png', status: 'clean' as const }
+  const service = {
+    create: vi.fn(),
+    complete: vi.fn(),
+    get: vi.fn(async () => record as never),
+    download: vi.fn(async () => image),
+    resolveReferences: vi.fn(),
+  }
+  const app = new OpenAPIHono()
+  app.use('*', async (context, next) => {
+    context.set('mailContext', { userId: 'owner', workspaceId: 'workspace-a' })
+    await next()
+  })
+  app.route(
+    '/',
+    createAttachmentModule(service, () => true),
+  )
+  const inline = await app.request(`/api/v1/mail/attachments/${id}/inline`)
+  expect(inline.status).toBe(200)
+  expect(inline.headers.get('content-type')).toBe('image/png')
+  expect(inline.headers.get('cache-control')).toBe('private, no-store')
+  const download = await app.request(`/api/v1/mail/attachments/${id}/download`)
+  expect(download.headers.get('content-disposition')).toContain('hello.png')
+  service.get.mockResolvedValue({ ...record, contentType: 'image/svg+xml' } as never)
+  expect((await app.request(`/api/v1/mail/attachments/${id}/inline`)).status).toBe(404)
+})

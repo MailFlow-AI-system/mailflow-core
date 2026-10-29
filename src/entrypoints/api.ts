@@ -49,6 +49,7 @@ const app = createApp({
   outgoingMail: {
     repository: outgoingRepository,
     deliver: createResendDelivery(process.env),
+    ...(process.env.RESEND_FROM_EMAIL ? { senderEmail: process.env.RESEND_FROM_EMAIL } : {}),
     resolveAttachments: attachments.resolveReferences,
   },
 })

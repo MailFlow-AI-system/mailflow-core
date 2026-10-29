@@ -19,7 +19,11 @@ import {
   type AttachmentRepository,
 } from '../../attachments/types.js'
 import { assertMailContext } from '../../context/types.js'
-import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
+import {
+  attachments,
+  inboxMessageAttachments,
+  outgoingEmailAttachments,
+} from './schema/attachments.js'
 
 const leaseMilliseconds = 120_000
 
@@ -40,6 +44,18 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               eq(attachments.userId, record.userId),
               eq(attachments.workspaceId, record.workspaceId),
               gt(attachments.expiresAt, new Date()),
+              notExists(
+                transaction
+                  .select({ one: sql`1` })
+                  .from(inboxMessageAttachments)
+                  .where(
+                    and(
+                      eq(inboxMessageAttachments.userId, attachments.userId),
+                      eq(inboxMessageAttachments.workspaceId, attachments.workspaceId),
+                      eq(inboxMessageAttachments.attachmentId, attachments.id),
+                    ),
+                  ),
+              ),
               notExists(
                 transaction
                   .select({ one: sql`1` })
@@ -131,6 +147,18 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               notExists(
                 transaction
                   .select({ one: sql`1` })
+                  .from(inboxMessageAttachments)
+                  .where(
+                    and(
+                      eq(inboxMessageAttachments.userId, attachments.userId),
+                      eq(inboxMessageAttachments.workspaceId, attachments.workspaceId),
+                      eq(inboxMessageAttachments.attachmentId, attachments.id),
+                    ),
+                  ),
+              ),
+              notExists(
+                transaction
+                  .select({ one: sql`1` })
                   .from(outgoingEmailAttachments)
                   .where(
                     and(
@@ -166,8 +194,28 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               ),
             ),
           )
+        const inboxAssociated = await transaction
+          .selectDistinct({
+            userId: inboxMessageAttachments.userId,
+            workspaceId: inboxMessageAttachments.workspaceId,
+            attachmentId: inboxMessageAttachments.attachmentId,
+          })
+          .from(inboxMessageAttachments)
+          .where(
+            or(
+              ...rows.map((row) =>
+                and(
+                  eq(inboxMessageAttachments.userId, row.userId),
+                  eq(inboxMessageAttachments.workspaceId, row.workspaceId as string),
+                  eq(inboxMessageAttachments.attachmentId, row.id),
+                ),
+              ),
+            ),
+          )
         const protectedIds = new Set(
-          associated.map((row) => JSON.stringify([row.workspaceId, row.userId, row.attachmentId])),
+          [...associated, ...inboxAssociated].map((row) =>
+            JSON.stringify([row.workspaceId, row.userId, row.attachmentId]),
+          ),
         )
         const claimed: AttachmentRecord[] = []
         for (const row of rows) {
@@ -223,7 +271,19 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
           ),
         )
         .limit(1)
-      return Boolean(association)
+      if (association) return true
+      const [inboxAssociation] = await database
+        .select({ attachmentId: inboxMessageAttachments.attachmentId })
+        .from(inboxMessageAttachments)
+        .where(
+          and(
+            eq(inboxMessageAttachments.userId, userId),
+            eq(inboxMessageAttachments.workspaceId, workspaceId),
+            eq(inboxMessageAttachments.attachmentId, id),
+          ),
+        )
+        .limit(1)
+      return Boolean(inboxAssociation)
     },
     isFinalKeyReferenced: async (key, workspaceId) => {
       const [record] = await database

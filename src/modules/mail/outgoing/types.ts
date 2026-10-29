@@ -40,16 +40,23 @@ export type SentEmail = {
   cc: string[]
   bcc: string[]
   recipientName: string
+  senderEmail?: string | null
   subject: string
   text: string
   sentAt: Date | null
+  createdAt?: Date
   attachments?: SentAttachment[]
 }
 export type OutgoingRepository = {
   reserve: (
-    input: SendEmailInput & MailContext & { payloadHash: string; deliveryKey: string },
+    input: SendEmailInput &
+      MailContext & { payloadHash: string; deliveryKey: string; senderEmail?: string | null },
   ) => Promise<ReservedEmail>
-  beginAttempt: (context: MailContext, id: string) => Promise<DeliveryAttempt | null>
+  beginAttempt: (
+    context: MailContext,
+    id: string,
+    senderEmail?: string,
+  ) => Promise<DeliveryAttempt | null>
   markRejected: (context: MailContext, id: string, attempt: DeliveryAttempt) => Promise<void>
   cleanupAbandoned: () => Promise<number>
   discard: (context: MailContext, input: DiscardInput) => Promise<DiscardResult>
@@ -59,6 +66,7 @@ export type OutgoingRepository = {
 }
 export type OutgoingMail = {
   repository: OutgoingRepository
+  senderEmail?: string
   deliver: (input: ProviderEmailInput, idempotencyKey: string) => Promise<string>
   resolveAttachments?: (
     context: MailContext,
