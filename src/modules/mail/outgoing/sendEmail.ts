@@ -10,14 +10,20 @@ import {
 
 export { MessageConflictError } from './types.js'
 export async function sendEmail(
-  { repository, deliver, resolveAttachments }: OutgoingMail,
+  { repository, deliver, resolveAttachments, senderEmail }: OutgoingMail,
   context: MailContext,
   input: SendEmailInput,
 ) {
   assertMailContext(context)
   const deliveryKey = `mail/${encodeURIComponent(context.workspaceId)}/${encodeURIComponent(context.userId)}/${input.id}`
   const payloadHash = createHash('sha256').update(JSON.stringify(input)).digest('hex')
-  const record = await repository.reserve({ ...input, ...context, payloadHash, deliveryKey })
+  const record = await repository.reserve({
+    ...input,
+    ...context,
+    payloadHash,
+    deliveryKey,
+    ...(senderEmail ? { senderEmail } : {}),
+  })
   if (record.payloadHash !== payloadHash)
     throw new MessageConflictError('This id belongs to a different message')
   if (!record.providerId) {
@@ -29,7 +35,7 @@ export async function sendEmail(
       if (!resolveAttachments) throw new Error('Attachment storage unavailable')
       attachments = await resolveAttachments(context, input.attachments)
     }
-    const attempt = await repository.beginAttempt(context, input.id)
+    const attempt = await repository.beginAttempt(context, input.id, senderEmail)
     if (!attempt) return { id: record.id, status: 'sent' as const }
     let providerId: string
     try {

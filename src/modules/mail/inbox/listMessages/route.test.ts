@@ -6,7 +6,10 @@ import type { AuthService } from '../../../identityWorkspace/infrastructure/type
 import type { MailMessageRepository } from './types.js'
 
 function createTestApp(authenticated = true) {
-  const repository = { findMessages: vi.fn().mockResolvedValue([]) } satisfies MailMessageRepository
+  const repository = {
+    findMessages: vi.fn().mockResolvedValue([]),
+    findMessage: vi.fn().mockResolvedValue(null),
+  } satisfies MailMessageRepository
   const auth: AuthService = {
     handler: async () => new Response(),
     api: {
@@ -223,5 +226,46 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
     expect(operation.responses).toHaveProperty('400')
     expect(operation.responses).toHaveProperty('401')
     expect(operation.responses).toHaveProperty('500')
+  })
+})
+
+describe('GET inbox message detail', () => {
+  it('returns the stored message within the authorized workspace', async () => {
+    const { app, repository } = createTestApp()
+    const id = '00000000-0000-4000-8000-000000000001'
+    repository.findMessage.mockResolvedValue({
+      id,
+      subject: 'Subject',
+      senderName: 'Sender',
+      senderEmail: 'sender@example.test',
+      to: ['to@example.test'],
+      cc: [],
+      bcc: [],
+      html: '<p>Body</p>',
+      text: 'Body',
+      date: '2026-10-01T12:00:00.000Z',
+      attachments: [],
+    })
+    const response = await app.request(`/api/v1/workspaces/acme/mail/messages/${id}`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(await response.json()).toMatchObject({
+      id,
+      senderEmail: 'sender@example.test',
+      text: 'Body',
+    })
+    expect(repository.findMessage).toHaveBeenCalledWith('workspace-a', id, 'user')
+  })
+  it('rejects invalid and unavailable messages without leaking data', async () => {
+    const { app, repository } = createTestApp()
+    expect((await app.request('/api/v1/workspaces/acme/mail/messages/invalid')).status).toBe(404)
+    expect(repository.findMessage).not.toHaveBeenCalled()
+    expect(
+      (
+        await app.request(
+          '/api/v1/workspaces/acme/mail/messages/00000000-0000-4000-8000-000000000001',
+        )
+      ).status,
+    ).toBe(404)
   })
 })

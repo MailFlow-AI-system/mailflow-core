@@ -106,7 +106,8 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       migrationsTable: '__drizzle_migrations',
     })
     await owner.query(`GRANT USAGE ON SCHEMA mail TO "${role}";
-      GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO "${role}"`)
+      GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO "${role}";
+      GRANT SELECT ON mail.attachment, mail.inbox_message_attachment TO "${role}"`)
     ownerUrl.username = role
     ownerUrl.password = 'mail_test_local_only'
     pool = new Pool({ connectionString: ownerUrl.href, max: 1 })
@@ -149,6 +150,34 @@ describe('Workspace Inbox PostgreSQL integration', () => {
     expect(response.status).toBe(200)
     return (await response.json()) as ListMessagesResponse
   }
+
+  it('reads stored detail and limits attachment metadata to the current workspace and user', async () => {
+    const fixture = fixtures[0]
+    if (!fixture) throw new Error('Missing fixture')
+    const id = fixture.id
+    const attachmentId = randomUUID()
+    await owner.query(
+      `INSERT INTO mail.attachment (id,user_id,workspace_id,filename,content_type,size,sha256,status,temporary_key,final_key) VALUES ($1,'user','workspace-a','photo.png','image/png',8,$2,'clean',$3,$4)`,
+      [attachmentId, 'a'.repeat(64), `tmp/${attachmentId}`, `final/${attachmentId}`],
+    )
+    await owner.query(
+      `INSERT INTO mail.inbox_message_attachment (workspace_id,user_id,message_id,attachment_id,position,content_id) VALUES ('workspace-a','user',$1,$2,0,'photo')`,
+      [id, attachmentId],
+    )
+    const repository = createMailMessageRepository(pool)
+    expect(await repository.findMessage?.('workspace-a', id, 'user')).toMatchObject({
+      id,
+      text: fixture.body,
+      senderEmail: null,
+      attachments: [{ id: attachmentId, contentId: 'photo' }],
+    })
+    expect((await repository.findMessage?.('workspace-a', id, 'other'))?.attachments).toEqual([])
+    expect(await repository.findMessage?.('workspace-b', id, 'user')).toBeNull()
+    await owner.query('DELETE FROM mail.inbox_message_attachment WHERE attachment_id=$1', [
+      attachmentId,
+    ])
+    await owner.query('DELETE FROM mail.attachment WHERE id=$1', [attachmentId])
+  })
 
   it('paginates eight at a time across timestamp ties, returns the partial page, then ends', async () => {
     const first = await getPage()
@@ -258,11 +287,20 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       expect(stored.find((message) => message.id === original.id)).toEqual({
         ...original,
         workspaceId: 'workspace-a',
+        senderEmail: null,
+        to: [],
+        cc: [],
+        bcc: [],
+        html: null,
       })
     }
     for (const seeded of seedMailMessages) {
       expect(stored.find((message) => message.id === mailSeedId('workspace-a', seeded.id))).toEqual(
-        { ...seeded, workspaceId: 'workspace-a', id: mailSeedId('workspace-a', seeded.id) },
+        {
+          ...seeded,
+          workspaceId: 'workspace-a',
+          id: mailSeedId('workspace-a', seeded.id),
+        },
       )
     }
   })

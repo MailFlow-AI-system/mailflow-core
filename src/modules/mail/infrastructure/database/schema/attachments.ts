@@ -12,7 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import type { AttachmentStatus } from '../../../attachments/types.js'
-import { mailSchema } from './messages.js'
+import { mailSchema, messages } from './messages.js'
 import { outgoingEmails } from './outgoingEmails.js'
 
 export const attachments = mailSchema.table(
@@ -106,5 +106,29 @@ export const outgoingEmailAttachments = mailSchema.table(
       'outgoing_attachment_position_check',
       sql`${table.position} >= 0 and ${table.position} < 10`,
     ),
+  ],
+)
+
+export const inboxMessageAttachments = mailSchema.table(
+  'inbox_message_attachment',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    userId: text('user_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    attachmentId: uuid('attachment_id').notNull(),
+    position: integer('position').notNull(),
+    contentId: text('content_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.userId, table.messageId, table.position] }),
+    foreignKey({
+      columns: [table.workspaceId, table.messageId],
+      foreignColumns: [messages.workspaceId, messages.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.workspaceId, table.userId, table.attachmentId],
+      foreignColumns: [attachments.workspaceId, attachments.userId, attachments.id],
+    }).onDelete('restrict'),
+    check('inbox_attachment_position_check', sql`${table.position} >= 0`),
   ],
 )

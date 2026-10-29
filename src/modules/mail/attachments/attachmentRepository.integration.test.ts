@@ -6,6 +6,7 @@ import type { MailContext } from '../context/types.js'
 import { createAttachmentRepository } from '../infrastructure/database/attachmentRepository.js'
 import { createOutgoingRepository } from '../infrastructure/database/outgoingRepository.js'
 import { attachments } from '../infrastructure/database/schema/attachments.js'
+import { createAttachmentService } from './service.js'
 import type { AttachmentRecord } from './types.js'
 
 const databaseUrl = process.env.MAILFLOW_MAIL_INTEGRATION_DATABASE_URL
@@ -169,6 +170,46 @@ integration('attachment PostgreSQL persistence', () => {
     expect(await repository.claimCompletion(context(row.userId), row.id, 'third')).toBeNull()
     expect(await repository.isFinalKeyReferenced(finalKey('clean'))).toBe(true)
     expect(await repository.isFinalKeyReferenced(finalKey('missing'))).toBe(false)
+  })
+
+  it('retains expired attachments associated with an inbox message', async () => {
+    const row = await repository.create(
+      record({
+        status: 'clean',
+        finalKey: finalKey('inbox'),
+        expiresAt: new Date(Date.now() - 1000),
+      }),
+    )
+    const messageId = randomUUID()
+    try {
+      await client.query('BEGIN')
+      await client.query("select set_config('mailflow.workspace_id', 'workspace-a', true)")
+      await client.query(
+        "INSERT INTO mail.message (id,workspace_id,sender_name,subject,body,received_at) VALUES ($1,'workspace-a','Sender','Subject','Body',now())",
+        [messageId],
+      )
+      await client.query(
+        "INSERT INTO mail.inbox_message_attachment (workspace_id,user_id,message_id,attachment_id,position) VALUES ('workspace-a',$1,$2,$3,0)",
+        [owner, messageId, row.id],
+      )
+      await client.query('COMMIT')
+      expect(await repository.isAssociated(context(), row.id)).toBe(true)
+      expect(await repository.isAssociated(context(foreignOwner), row.id)).toBe(false)
+      expect(await repository.claimExpired(100, 'inbox-cleanup')).not.toContainEqual(
+        expect.objectContaining({ id: row.id }),
+      )
+      const service = createAttachmentService({ repository, storage: {} as never })
+      expect(await service.get(context(), row.id)).toMatchObject({
+        status: 'clean',
+        associated: true,
+      })
+    } finally {
+      await client.query('ROLLBACK')
+      await client.query('BEGIN')
+      await client.query("select set_config('mailflow.workspace_id', 'workspace-a', true)")
+      await client.query('DELETE FROM mail.message WHERE id = $1', [messageId])
+      await client.query('COMMIT')
+    }
   })
 
   it('claims expired unassociated objects, hides them, and deletes only with the current lease', async () => {

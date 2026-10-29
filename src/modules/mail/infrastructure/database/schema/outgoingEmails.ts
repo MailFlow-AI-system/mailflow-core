@@ -26,6 +26,7 @@ export const outgoingEmails = mailSchema.table(
     cc: jsonb('cc').$type<string[]>().notNull(),
     bcc: jsonb('bcc').$type<string[]>().notNull(),
     recipientName: text('recipient_name').default('').notNull(),
+    senderEmail: text('sender_email'),
     subject: text('subject').notNull(),
     html: text('html').notNull(),
     text: text('text').notNull(),

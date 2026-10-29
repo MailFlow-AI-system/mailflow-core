@@ -2,6 +2,7 @@ import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import type { MailWorkspaceAuthority } from '#modules/identityWorkspace'
 import { createApp } from '../../../app.js'
+import type { SentEmail } from './types.js'
 
 const input = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -26,6 +27,9 @@ function setup(authenticated = true, workspace = false) {
       })),
       markSent: vi.fn(async () => {}),
       listSent: vi.fn(async () => []),
+      findSent: vi.fn(
+        async (_context, _id): Promise<(SentEmail & { html: string }) | null> => null,
+      ),
     },
     deliver: vi.fn(async () => 'provider-id'),
   }
@@ -310,4 +314,33 @@ describe('workspace-scoped Sent HTTP', () => {
     expect(resolve).toHaveBeenCalledWith('owner', { workspaceId: 'workspace-b', slug: 'alpha' })
     expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
   })
+})
+
+it('returns only the scoped sent message and its actual stored sender', async () => {
+  const { app, outgoingMail } = setup()
+  outgoingMail.repository.findSent.mockResolvedValue({
+    id: input.id,
+    subject: 'Hello',
+    recipientName: '',
+    senderEmail: 'sender@example.test',
+    to: input.to,
+    cc: [],
+    bcc: [],
+    html: input.html,
+    text: input.text,
+    sentAt: new Date('2026-10-01T12:00:00Z'),
+    attachments: [],
+  })
+  const response = await app.request(`/api/v1/mail/sent/${input.id}`)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({
+    id: input.id,
+    senderEmail: 'sender@example.test',
+    date: '2026-10-01T12:00:00.000Z',
+  })
+  expect(outgoingMail.repository.findSent).toHaveBeenCalledWith(
+    expect.objectContaining({ userId: 'owner', workspaceId: 'workspace-a' }),
+    input.id,
+  )
+  expect((await app.request('/api/v1/mail/sent/invalid')).status).toBe(404)
 })
