@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { bodyLimit } from 'hono/body-limit'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { validImageContent } from './imageValidation.js'
 import type { AttachmentService } from './service.js'
 import { AttachmentQuotaError, type AttachmentView } from './types.js'
 
@@ -191,14 +192,35 @@ export function createAttachmentModule(
       })
     return context.json(publicRecord(record), 200)
   })
+  app.get('/api/v1/mail/attachments/:id/inline', async (context) => {
+    if (!params.safeParse(context.req.param()).success) return context.notFound()
+    const owner = context.get('mailContext')
+    const id = context.req.param('id')
+    const record = await service.get(owner, id)
+    if (record?.status !== 'clean') return context.notFound()
+    const bytes = await service.download(owner, id)
+    if (!bytes || !validImageContent(record.contentType, bytes)) return context.notFound()
+    return new Response(new Uint8Array(bytes), {
+      headers: {
+        'Content-Type': record.contentType,
+        'Content-Disposition': 'inline',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+      },
+    })
+  })
   app.get('/api/v1/mail/attachments/:id/download', async (context) => {
     if (!params.safeParse(context.req.param()).success) return context.notFound()
-    const bytes = await service.download(context.get('mailContext'), context.req.param('id'))
+    const owner = context.get('mailContext')
+    const record = await service.get(owner, context.req.param('id'))
+    if (!record) return context.notFound()
+    const bytes = await service.download(owner, context.req.param('id'))
     if (!bytes) return context.notFound()
     return new Response(new Uint8Array(bytes), {
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': 'attachment',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(record.filename).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`,
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
       },

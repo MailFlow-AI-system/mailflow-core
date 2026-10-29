@@ -1,5 +1,13 @@
 import type { MailMessage } from '../inbox/listMessages/types.js'
 
+export type SeedMailMessage = MailMessage & {
+  senderEmail: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  html: string | null
+}
+
 const content: [senderName: string, subject: string, opening: string, followUp: string][] = [
   [
     'Maya Thompson',
@@ -11,7 +19,7 @@ const content: [senderName: string, subject: string, opening: string, followUp: 
     'Liam Chen',
     'Your workspace reservation is confirmed',
     'The Cedar meeting room is reserved for our team on Friday from nine until eleven. Reception has the guest list, and the room includes a display, a whiteboard, and the equipment requested for the remote participants.',
-    'Please arrive ten minutes early so we can check the audio before the first presentation. If your travel plans change, reply to this message and I will update the reservation with the building coordinator.',
+    'Please arrive ten minutes early so we can check the audio before the first presentation. If your travel plans change, reply to this message and I will update the reservation with the building coordinator. Reservation details: https://example.com/mailflow-qa/reservation',
   ],
   [
     'Olivia Brooks',
@@ -201,12 +209,41 @@ const content: [senderName: string, subject: string, opening: string, followUp: 
   ],
 ]
 
-export const seedMailMessages: MailMessage[] = content.map(
+const longBodySections = [
+  'The review begins with the request history, the decision owner, and the date when the team last confirmed the expected outcome. Keeping these details together lets a new reviewer understand why the current plan exists.',
+  'The access check covers the people who need to read the material, the people who can update it, and the process for removing access when a project ends. Any exception should have an owner and a date for review.',
+  'For each delivery milestone, the team records what is ready, what remains open, and which dependency could change the schedule. This makes the status useful to people who were not present in the planning meeting.',
+  'The customer examples stay anonymized and retain only the context needed to explain the workflow. Personal information and unrelated correspondence are not copied into the shared review notes.',
+  'The quality pass checks the behavior in the browser at ordinary and narrow viewport widths. It also checks the keyboard path, visible focus, and whether long content remains readable without unexpected clipping.',
+  'Before closing the review, the owner confirms that the linked reference is available, the documented decision matches the implementation, and each follow-up has a person responsible for reporting progress.',
+  'If the schedule changes, the update includes the affected milestone and the reason for the change. The previous decision remains in the history so the team can explain the sequence during the next review.',
+  'The final handoff includes the source material, the agreed acceptance criteria, and any known limitation that still needs attention. Reviewers can then verify the work without relying on a private conversation.',
+]
+
+export const seedMailMessages: SeedMailMessage[] = content.map(
   ([senderName, subject, opening, followUp], index) => ({
     id: `10000000-0000-4000-8000-${String(33 - index).padStart(12, '0')}`,
     senderName,
-    subject,
-    body: `Hi team,\n\n${opening}\n\n${followUp}\n\nBest,\n${senderName}`,
+    senderEmail: `${senderName.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@example.test`,
+    to:
+      index === 0
+        ? ['workspace@example.test', 'product@example.test', 'design@example.test']
+        : ['workspace@example.test'],
+    cc: index === 0 ? ['qa-team@example.test'] : [],
+    bcc: index === 0 ? ['audit@example.test'] : [],
+    html:
+      index === 0
+        ? `<html><body><h1>October planning notes</h1><p>${opening}</p><p>${followUp}</p><img src="cid:mailflow-qa-inline-image" alt="Planning board preview" /><p><a href="https://example.com/mailflow-qa/roadmap">Open the QA roadmap</a></p></body></html>`
+        : null,
+    subject: `[MailFlow QA] ${subject}`,
+    body: [
+      'Hi team,',
+      opening,
+      followUp,
+      ...(index === content.length - 1 ? longBodySections : []),
+      'Best,',
+      senderName,
+    ].join('\n\n'),
     receivedAt: new Date(Date.UTC(2026, 8, 30, 16, 0, -Math.floor(index / 3) * 3600)),
   }),
 )

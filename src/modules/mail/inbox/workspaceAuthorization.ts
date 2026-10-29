@@ -40,6 +40,7 @@ export function authorizeWorkspaceMail(
         detail: 'This workspace is unavailable.',
         code: 'workspace_unavailable',
       })
+    context.header('X-Workspace-Id', workspace.id)
     context.set('workspaceId', workspace.id)
     await next()
   }

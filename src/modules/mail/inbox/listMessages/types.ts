@@ -15,7 +15,28 @@ export type MailMessage = {
 
 export type MessageCursor = Pick<MailMessage, 'id' | 'receivedAt'>
 
+export type MessageDetail = {
+  id: string
+  subject: string
+  senderName: string | null
+  senderEmail: string | null
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  html: string | null
+  text: string
+  date: string
+  attachments: {
+    id: string
+    filename: string
+    contentType: string
+    size: number
+    contentId: string | null
+  }[]
+}
+
 export type MailMessageRepository = {
+  findMessage?: (workspaceId: string, id: string, userId: string) => Promise<MessageDetail | null>
   findMessages: (input: {
     workspaceId: string
     search: string

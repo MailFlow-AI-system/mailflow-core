@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { seedMailMessages } from './fixtures.js'
+import { type SeedMailMessage, seedMailMessages } from './fixtures.js'
 import { mailSeedId } from './seedMail.js'
 
 describe('mail seed dataset', () => {
@@ -38,5 +38,30 @@ describe('mail seed dataset', () => {
     for (const character of ['%', '_', '\\']) {
       expect(seedMailMessages.some((message) => message.body.includes(character))).toBe(true)
     }
+  })
+
+  it('marks fixtures for cleanup and covers message-detail states', () => {
+    const detailedMessages: SeedMailMessage[] = seedMailMessages
+
+    expect(detailedMessages.every((message) => message.subject.startsWith('[MailFlow QA] '))).toBe(
+      true,
+    )
+    expect(detailedMessages.every((message) => message.senderEmail.includes('@example.test'))).toBe(
+      true,
+    )
+    expect(detailedMessages.some((message) => message.html?.includes('href="https://'))).toBe(true)
+    expect(detailedMessages[0]?.html).toContain('src="cid:mailflow-qa-inline-image"')
+    expect(detailedMessages.some((message) => message.html === null)).toBe(true)
+    expect(detailedMessages.some((message) => message.body.length > 1500)).toBe(true)
+    expect(detailedMessages.some((message) => message.to.length > 1)).toBe(true)
+    expect(detailedMessages.some((message) => message.cc.length > 0)).toBe(true)
+    expect(detailedMessages.some((message) => message.bcc.length > 0)).toBe(true)
+  })
+
+  it('includes a clickable URL in a plain-text message body', () => {
+    const plainTextMessage = seedMailMessages.find((message) => message.senderName === 'Liam Chen')
+
+    expect(plainTextMessage?.html).toBeNull()
+    expect(plainTextMessage?.body).toContain('https://example.com/mailflow-qa/reservation')
   })
 })

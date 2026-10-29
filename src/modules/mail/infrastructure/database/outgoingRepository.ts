@@ -17,9 +17,11 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
     cc: outgoingEmails.cc,
     bcc: outgoingEmails.bcc,
     recipientName: outgoingEmails.recipientName,
+    senderEmail: outgoingEmails.senderEmail,
     subject: outgoingEmails.subject,
     text: outgoingEmails.text,
     sentAt: outgoingEmails.sentAt,
+    createdAt: outgoingEmails.createdAt,
   }
   async function sentAttachments(context: MailContext, messageIds: string[]) {
     const byMessage = new Map<string, SentAttachment[]>()
@@ -177,6 +179,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
       cc,
       bcc,
       recipientName,
+      senderEmail,
       subject,
       html,
       text,
@@ -197,6 +200,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
             cc,
             bcc,
             recipientName,
+            senderEmail,
             subject,
             html,
             text,
@@ -264,7 +268,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
         )
         return record
       }),
-    beginAttempt: async (context, id) => {
+    beginAttempt: async (context, id, senderEmail) => {
       assertMailContext(context)
       return database.transaction(async (transaction) => {
         const predicate = and(
@@ -284,7 +288,16 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
         const token = randomUUID()
         await transaction
           .update(outgoingEmails)
-          .set({ deliveryState: 'uncertain', attemptToken: token })
+          .set({
+            deliveryState: 'uncertain',
+            attemptToken: token,
+            senderEmail:
+              record.deliveryState === 'ready' || record.deliveryState === 'rejected'
+                ? (senderEmail ?? null)
+                : record.senderEmail === (senderEmail ?? null)
+                  ? record.senderEmail
+                  : null,
+          })
           .where(predicate)
         return {
           token,
