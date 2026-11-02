@@ -71,6 +71,20 @@
       "when": 1791209810280,
       "tag": "0009_workspace_selection_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793632692342,
+      "tag": "0010_workspace_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793632693646,
+      "tag": "0011_workspace_roles_isolation",
+      "breakpoints": true
     }
   ]
 }

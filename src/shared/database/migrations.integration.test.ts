@@ -85,6 +85,7 @@ describeIntegration('PostgreSQL migrations', { timeout: 30_000 }, () => {
         { table_schema: 'identity_workspace', table_name: 'user' },
         { table_schema: 'identity_workspace', table_name: 'verification' },
         { table_schema: 'identity_workspace', table_name: 'workspace_preference' },
+        { table_schema: 'identity_workspace', table_name: 'workspace_role' },
         { table_schema: 'mail', table_name: 'attachment' },
         { table_schema: 'mail', table_name: 'inbox_message_attachment' },
         { table_schema: 'mail', table_name: 'label' },
