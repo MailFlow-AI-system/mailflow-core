@@ -44,6 +44,21 @@ Shared rollout must apply the current migrations before reviewing the disabled
 [runtime role proposal](infrastructure/database/runtimeRole.sql). Provision its login secret
 securely, update only `DATABASE_URL`, and retain the migration administrator in `DIRECT_URL`.
 
+## Authorization
+
+Access is decided by named capabilities, default deny. Roles are bundles of capabilities and the
+effective set is resolved per request from the member's role; nothing is cached.
+
+- Catalog: [`capabilities.ts`](src/modules/identityWorkspace/authorization/capabilities.ts).
+  Roles: [`roles.ts`](src/modules/identityWorkspace/authorization/roles.ts). Predefined roles live
+  in code and are immutable; `custom` members point to a `workspace_role` row (the model only, no
+  management yet).
+- Mail routes are listed in [`capabilityPolicy.ts`](src/modules/mail/context/capabilityPolicy.ts).
+  A route missing from the table is denied with `403 insufficient_capability`.
+- New capability: add it to the catalog, grant it to roles, list the routes that need it, and add
+  a test. `GET /api/v1/mail/context` returns the caller's `capabilities`.
+- After migrations that add tables, repeat the runtime role grants (`runtimeRole.sql`).
+
 ## Message reader
 
 Inbox details use `GET /api/v1/workspaces/:slug/mail/messages/:id`; Sent details use
