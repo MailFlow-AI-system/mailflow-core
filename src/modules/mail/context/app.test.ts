@@ -1,8 +1,15 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
+import { resolveCapabilities } from '#modules/identityWorkspace'
 import { createApp } from '../../../app.js'
 
-const workspace = { id: 'workspace-a', name: 'Alpha', slug: 'alpha', role: 'owner' as const }
+const workspace = {
+  id: 'workspace-a',
+  name: 'Alpha',
+  slug: 'alpha',
+  role: 'owner' as const,
+  capabilities: resolveCapabilities('owner'),
+}
 function setup({ authenticated = true, hasAuthority = true, workspaceMode = false } = {}) {
   const resolve = vi.fn(async () => ({ status: 'ok' as const, workspace }))
   const app = createApp({

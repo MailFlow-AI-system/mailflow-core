@@ -1,6 +1,7 @@
 import { OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { requireMailCapability } from '../../context/capabilityPolicy.js'
 import { authorizeWorkspaceMail } from '../workspaceAuthorization.js'
 import { listMessagesRoute } from './contract.js'
 import { InvalidMessageCursorError, listMessages } from './listMessages.js'
@@ -14,7 +15,11 @@ export function createMailModule({
   resolveWorkspace: ResolveWorkspace
 }) {
   const app = new OpenAPIHono<MailEnvironment>()
-  app.use('/api/v1/workspaces/:slug/mail/*', authorizeWorkspaceMail(resolveWorkspace))
+  app.use(
+    '/api/v1/workspaces/:slug/mail/*',
+    authorizeWorkspaceMail(resolveWorkspace),
+    requireMailCapability,
+  )
 
   app.get('/api/v1/workspaces/:slug/mail/messages/:id', async (context) => {
     const id = context.req.param('id')

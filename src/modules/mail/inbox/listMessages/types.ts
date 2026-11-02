@@ -2,7 +2,10 @@ import type { Pool, PoolClient } from 'pg'
 
 export type MailPool = Pick<Pool, 'connect'>
 export type MailClient = PoolClient
-export type ResolveWorkspace = (userId: string, slug: string) => Promise<{ id: string } | null>
+export type ResolveWorkspace = (
+  userId: string,
+  slug: string,
+) => Promise<{ id: string; capabilities: readonly string[] } | null>
 export type MailEnvironment = { Variables: { workspaceId: string } }
 
 export type MailMessage = {

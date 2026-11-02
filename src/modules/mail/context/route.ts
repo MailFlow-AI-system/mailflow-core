@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { capabilities, memberRoles } from '#modules/identityWorkspace'
 import type {} from './middleware.js'
 
 const route = createRoute({
@@ -15,7 +16,8 @@ const route = createRoute({
               id: z.string(),
               name: z.string(),
               slug: z.string(),
-              role: z.enum(['owner', 'admin', 'member']),
+              role: z.enum(memberRoles),
+              capabilities: z.array(z.enum(capabilities)),
             }),
           }),
         },

@@ -1,5 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import type { Pool, PoolClient } from 'pg'
+import type { Capability } from '../authorization/capabilities.js'
+import type { MemberRole } from '../authorization/roles.js'
 import type { AuthSession } from '../infrastructure/types/auth.js'
 import type { AuthOriginPolicy } from '../infrastructure/types/authConfig.js'
 
@@ -7,15 +9,18 @@ export type WorkspaceSummary = {
   id: string
   name: string
   slug: string
-  role: 'owner' | 'admin' | 'member'
+  role: MemberRole
 }
+
+// What the member may do in the workspace right now, resolved from the role on each request.
+export type WorkspaceAccess = WorkspaceSummary & { capabilities: Capability[] }
 
 export type WorkspacePage = { items: WorkspaceSummary[]; nextCursor: string | null }
 export type WorkspacePool = Pick<Pool, 'connect'>
 export type WorkspaceClient = Pick<PoolClient, 'query' | 'release'>
 export type WorkspaceReader = {
   list: (userId: string, cursor?: string) => Promise<WorkspacePage>
-  context: (userId: string, slug: string) => Promise<WorkspaceSummary | null>
+  context: (userId: string, slug: string) => Promise<WorkspaceAccess | null>
 }
 export type WorkspaceSelection = {
   select: (userId: string, workspaceId: string) => Promise<WorkspaceSummary | null>
