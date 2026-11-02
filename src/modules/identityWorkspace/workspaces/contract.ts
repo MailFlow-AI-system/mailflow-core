@@ -1,4 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi'
+import { capabilities } from '../authorization/capabilities.js'
+import { memberRoles } from '../authorization/roles.js'
 
 export const workspaceSummarySchema = z
   .object({
@@ -8,9 +10,13 @@ export const workspaceSummarySchema = z
       .string()
       .max(63)
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    role: z.enum(['owner', 'admin', 'member']),
+    role: z.enum(memberRoles),
   })
   .openapi('WorkspaceSummary')
+
+export const workspaceAccessSchema = workspaceSummarySchema
+  .extend({ capabilities: z.array(z.enum(capabilities)) })
+  .openapi('WorkspaceAccess')
 
 const problem = z.object({
   type: z.string(),
@@ -79,7 +85,7 @@ export const workspaceContextRoute = createRoute({
       description: 'Live, authorized workspace context',
       content: {
         'application/json': {
-          schema: z.object({ workspace: workspaceSummarySchema }),
+          schema: z.object({ workspace: workspaceAccessSchema }),
         },
       },
     },

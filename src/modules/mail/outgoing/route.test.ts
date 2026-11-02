@@ -1,6 +1,6 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
-import type { MailWorkspaceAuthority } from '#modules/identityWorkspace'
+import { type MailWorkspaceAuthority, resolveCapabilities } from '#modules/identityWorkspace'
 import { createApp } from '../../../app.js'
 import type { SentEmail } from './types.js'
 
@@ -35,7 +35,13 @@ function setup(authenticated = true, workspace = false) {
   }
   const resolve = vi.fn<MailWorkspaceAuthority['resolve']>(async () => ({
     status: 'ok',
-    workspace: { id: 'workspace-a', name: 'Workspace', slug: 'workspace-a', role: 'owner' },
+    workspace: {
+      id: 'workspace-a',
+      name: 'Workspace',
+      slug: 'workspace-a',
+      role: 'owner',
+      capabilities: resolveCapabilities('owner'),
+    },
   }))
   const app = createApp({
     config: {
@@ -274,7 +280,13 @@ describe('workspace-scoped Sent HTTP', () => {
     const { app, outgoingMail, resolve } = setup()
     resolve.mockResolvedValueOnce({
       status: 'ok',
-      workspace: { id: 'workspace-b', name: 'Beta', slug: 'beta', role: 'member' },
+      workspace: {
+        id: 'workspace-b',
+        name: 'Beta',
+        slug: 'beta',
+        role: 'member',
+        capabilities: resolveCapabilities('member'),
+      },
     })
     const response = await app.request('/api/v1/mail/sent?offset=5', {
       headers: { 'X-Workspace-Id': 'workspace-b', 'X-Workspace-Identity': 'owner' },
@@ -343,4 +355,57 @@ it('returns only the scoped sent message and its actual stored sender', async ()
     input.id,
   )
   expect((await app.request('/api/v1/mail/sent/invalid')).status).toBe(404)
+})
+
+describe('capability enforcement', () => {
+  const asRole = (role: 'viewer' | 'analyst' | 'member') => ({
+    status: 'ok' as const,
+    workspace: {
+      id: 'workspace-a',
+      name: 'Workspace',
+      slug: 'workspace-a',
+      role,
+      capabilities: resolveCapabilities(role),
+    },
+  })
+
+  it.each(['viewer', 'analyst'] as const)(
+    'lets %s read Sent but never send, discard or upload',
+    async (role) => {
+      const { app, send, outgoingMail, resolve } = setup()
+      resolve.mockResolvedValue(asRole(role))
+
+      expect((await app.request('/api/v1/mail/sent')).status).toBe(200)
+      const denied = await send()
+      expect(denied.status).toBe(403)
+      expect(await denied.json()).toMatchObject({ code: 'insufficient_capability' })
+      expect(outgoingMail.deliver).not.toHaveBeenCalled()
+      const discard = await app.request('/api/v1/mail/discard', {
+        method: 'POST',
+        headers: { origin: 'https://mail.example.test', 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: [] }),
+      })
+      expect(discard.status).toBe(403)
+      expect(outgoingMail.repository.discard).not.toHaveBeenCalled()
+    },
+  )
+
+  it('denies before reading an oversized body', async () => {
+    const { app, resolve } = setup()
+    resolve.mockResolvedValue(asRole('viewer'))
+    const response = await app.request('/api/v1/mail/send', {
+      method: 'POST',
+      headers: { origin: 'https://mail.example.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ filler: 'x'.repeat(14 * 1024 * 1024) }),
+    })
+    expect(response.status).toBe(403)
+  })
+
+  it('still lets a member send', async () => {
+    const { send, outgoingMail, resolve } = setup()
+    resolve.mockResolvedValue(asRole('member'))
+
+    expect((await send()).status).toBe(200)
+    expect(outgoingMail.deliver).toHaveBeenCalledOnce()
+  })
 })

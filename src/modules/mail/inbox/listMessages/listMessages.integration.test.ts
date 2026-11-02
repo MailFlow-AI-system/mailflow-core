@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Pool } from 'pg'
 import pino from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { resolveCapabilities } from '#modules/identityWorkspace'
 
 import { createApp } from '../../../../app.js'
 import { createDatabase } from '../../../../shared/database/client.js'
@@ -73,7 +74,13 @@ function makeApp(repository: ReturnType<typeof createMailMessageRepository>) {
         list: async () => ({ items: [], nextCursor: null }),
         context: async (userId, slug) =>
           slug === 'acme' && userId === 'user'
-            ? { id: 'workspace-a', name: 'Acme', slug, role: 'owner' }
+            ? {
+                id: 'workspace-a',
+                name: 'Acme',
+                slug,
+                role: 'owner',
+                capabilities: resolveCapabilities('owner'),
+              }
             : null,
       },
       consumeBudget: async () => {

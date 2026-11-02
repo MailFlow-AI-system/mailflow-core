@@ -1,3 +1,12 @@
+export type { Capability } from './authorization/capabilities.js'
+export { capabilities } from './authorization/capabilities.js'
+export type { MemberRole, PredefinedRole } from './authorization/roles.js'
+export {
+  memberRoles,
+  predefinedRoles,
+  resolveCapabilities,
+  roleLabels,
+} from './authorization/roles.js'
 export { createAuth } from './infrastructure/auth/createAuth.js'
 export { installAuthRoutes } from './infrastructure/auth/route.js'
 export type { AuthService } from './infrastructure/types/auth.js'
@@ -31,6 +40,7 @@ export {
 export { assertWorkspaceSelectionDatabaseRole } from './workspaces/selectionDatabaseRole.js'
 export { createWorkspaceSelectionRoutes } from './workspaces/selectionRoute.js'
 export type {
+  WorkspaceAccess,
   WorkspaceReader,
   WorkspaceRouteDependencies,
   WorkspaceSelectionDependencies,
