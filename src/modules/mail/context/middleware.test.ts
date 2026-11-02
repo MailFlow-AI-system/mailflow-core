@@ -1,9 +1,15 @@
 import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vitest'
-import type { MailWorkspaceResolution } from '#modules/identityWorkspace'
+import { type MailWorkspaceResolution, resolveCapabilities } from '#modules/identityWorkspace'
 import { createMailContextMiddleware } from './middleware.js'
 
-const workspace = { id: 'workspace-a', name: 'Alpha', slug: 'alpha', role: 'owner' as const }
+const workspace = {
+  id: 'workspace-a',
+  name: 'Alpha',
+  slug: 'alpha',
+  role: 'owner' as const,
+  capabilities: resolveCapabilities('owner'),
+}
 function setup(result: MailWorkspaceResolution = { status: 'ok', workspace }) {
   const resolve = vi.fn(async () => result)
   const app = new Hono()

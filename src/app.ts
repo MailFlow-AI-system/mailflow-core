@@ -1,6 +1,7 @@
 import { swaggerUI } from '@hono/swagger-ui'
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { SpanStatusCode, trace } from '@opentelemetry/api'
+import type { MiddlewareHandler } from 'hono'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 
@@ -18,6 +19,7 @@ import {
   createMailContextModule,
   createMailModule,
   createOutgoingMailModule,
+  requireMailCapability,
 } from '#modules/mail'
 import { createHealthModule } from '#modules/system'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
@@ -59,10 +61,12 @@ export function createApp({
     isAllowedOrigin: isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
     ...(mailWorkspaceBaseOrigin ? { workspaceBaseOrigin: mailWorkspaceBaseOrigin } : {}),
   })
-  app.use('/api/v1/mail/*', async (context, next) => {
-    if (context.req.path === '/api/v1/mail/messages') return next()
-    return resolveMailContext(context, next)
-  })
+  const unlessLegacyMessages =
+    (middleware: MiddlewareHandler): MiddlewareHandler =>
+    (context, next) =>
+      context.req.path === '/api/v1/mail/messages' ? next() : middleware(context, next)
+  app.use('/api/v1/mail/*', unlessLegacyMessages(resolveMailContext))
+  app.use('/api/v1/mail/*', unlessLegacyMessages(requireMailCapability))
   app.route('/', createMailContextModule())
   if (attachments)
     app.route(
