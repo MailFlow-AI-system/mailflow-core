@@ -1,11 +1,12 @@
 import type { MiddlewareHandler } from 'hono'
-import type { MailWorkspaceAuthority, WorkspaceSummary } from '#modules/identityWorkspace'
+import type { MailWorkspaceAuthority, WorkspaceAccess } from '#modules/identityWorkspace'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import type {} from './capabilityPolicy.js'
 import type {} from './types.js'
 
 declare module 'hono' {
   interface ContextVariableMap {
-    mailWorkspace: WorkspaceSummary
+    mailWorkspace: WorkspaceAccess
   }
 }
 
@@ -103,6 +104,7 @@ export function createMailContextMiddleware(
         })
       context.set('mailContext', { workspaceId: result.workspace.id, userId: session.user.id })
       context.set('mailWorkspace', result.workspace)
+      context.set('mailCapabilities', result.workspace.capabilities)
       context.header('X-Workspace-Identity', session.user.id)
       context.header('X-Workspace-Id', result.workspace.id)
       context.header('Cache-Control', 'private, no-store')

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import type {} from '../context/capabilityPolicy.js'
 import type { MailEnvironment, ResolveWorkspace } from './listMessages/types.js'
 
 export function authorizeWorkspaceMail(
@@ -42,6 +43,7 @@ export function authorizeWorkspaceMail(
       })
     context.header('X-Workspace-Id', workspace.id)
     context.set('workspaceId', workspace.id)
+    context.set('mailCapabilities', workspace.capabilities)
     await next()
   }
 }

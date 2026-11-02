@@ -1,5 +1,6 @@
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
+import { resolveCapabilities } from '#modules/identityWorkspace'
 
 import { createApp } from '../../../../app.js'
 import type { AuthService } from '../../../identityWorkspace/infrastructure/types/auth.js'
@@ -18,9 +19,13 @@ function createTestApp(authenticated = true) {
     },
   }
 
-  const resolveWorkspace = vi
-    .fn()
-    .mockResolvedValue({ id: 'workspace-a', name: 'Acme', slug: 'acme', role: 'owner' })
+  const resolveWorkspace = vi.fn().mockResolvedValue({
+    id: 'workspace-a',
+    name: 'Acme',
+    slug: 'acme',
+    role: 'owner',
+    capabilities: resolveCapabilities('owner'),
+  })
   const consumeBudget = vi.fn().mockResolvedValue(0)
   const app = createApp({
     config: {
@@ -181,7 +186,8 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
   it('does not consume discovery budget for inbox requests or unknown mail paths', async () => {
     const { app, consumeBudget, resolveWorkspace } = createTestApp()
     expect((await app.request('/api/v1/workspaces/acme/mail/messages')).status).toBe(200)
-    expect((await app.request('/api/v1/workspaces/acme/mail/unknown')).status).toBe(404)
+    // A mail path without a policy entry is denied by default, never silently allowed.
+    expect((await app.request('/api/v1/workspaces/acme/mail/unknown')).status).toBe(403)
     expect(resolveWorkspace).toHaveBeenCalledWith('user', 'acme')
     expect(consumeBudget).not.toHaveBeenCalled()
   })
