@@ -8,6 +8,7 @@ const messageId = '00000000-0000-4000-8000-000000000002'
 function setup(authenticated = true) {
   const repository = {
     searchLabels: vi.fn().mockResolvedValue({ items: [], nextCursor: null, exactMatch: label }),
+    suggestColor: vi.fn().mockResolvedValue('#9333ea'),
     createLabel: vi.fn().mockResolvedValue(label),
     messageLabels: vi.fn().mockResolvedValue([label]),
     changeMessageLabel: vi.fn().mockResolvedValue([label]),
@@ -64,11 +65,28 @@ describe('workspace labels', () => {
     const response = await app.request('/api/v1/workspaces/acme/mail/labels', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: ' Invoice ' }),
+      body: JSON.stringify({ name: ' Invoice ', color: label.color }),
     })
     expect(response.status).toBe(201)
     expect(await response.json()).toEqual(label)
-    expect(repository.createLabel).toHaveBeenCalledWith('workspace-a', 'Invoice')
+    expect(repository.createLabel).toHaveBeenCalledWith('workspace-a', 'Invoice', label.color)
+  })
+  it('returns a workspace recommendation and rejects colors outside the palette', async () => {
+    const { app, repository } = setup()
+    const response = await app.request('/api/v1/workspaces/acme/mail/labels/palette')
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      colors: expect.arrayContaining(['#9333ea']),
+      suggestedColor: '#9333ea',
+    })
+    expect(repository.suggestColor).toHaveBeenCalledWith('workspace-a')
+    const invalid = await app.request('/api/v1/workspaces/acme/mail/labels', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Invoice', color: '#ffffff' }),
+    })
+    expect(invalid.status).toBe(400)
+    expect(repository.createLabel).not.toHaveBeenCalled()
   })
   it('rejects invalid names and unauthenticated requests', async () => {
     const { app, repository } = setup()

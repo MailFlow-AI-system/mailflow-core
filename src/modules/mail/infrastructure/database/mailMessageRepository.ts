@@ -1,9 +1,11 @@
-import { and, eq, ilike, sql } from 'drizzle-orm'
+import { and, eq, exists, ilike, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-postgres'
 
 import { INBOX_PAGE_SIZE } from '../../inbox/listMessages/listMessages.js'
 import type { MailMessageRepository, MailPool } from '../../inbox/listMessages/types.js'
+import { readMessageLabels } from './readMessageLabels.js'
 import { attachments, inboxMessageAttachments } from './schema/attachments.js'
+import { labels, messageLabels } from './schema/labels.js'
 import { messages } from './schema/messages.js'
 import { inWorkspaceTransaction } from './workspaceTransaction.js'
 
@@ -11,13 +13,14 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
   return {
     findMessage: (workspaceId, id, userId) =>
       inWorkspaceTransaction(pool, workspaceId, async (client) => {
-        const [row] = await drizzle({ client })
+        const db = drizzle({ client })
+        const [row] = await db
           .select()
           .from(messages)
           .where(and(eq(messages.workspaceId, workspaceId), eq(messages.id, id)))
           .limit(1)
         if (!row) return null
-        const storedAttachments = await drizzle({ client })
+        const storedAttachments = await db
           .select({
             id: attachments.id,
             filename: attachments.filename,
@@ -55,13 +58,33 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
           text: row.body,
           date: row.receivedAt.toISOString(),
           attachments: storedAttachments,
+          labels: (await readMessageLabels(db, workspaceId, [id])).get(id) ?? [],
         }
       }),
     findMessages: ({ workspaceId, search, cursor }) =>
       inWorkspaceTransaction(pool, workspaceId, async (client) => {
         const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
 
-        return drizzle({ client })
+        const db = drizzle({ client })
+        const matchingLabel = db
+          .select({ labelId: messageLabels.labelId })
+          .from(messageLabels)
+          .innerJoin(
+            labels,
+            and(
+              eq(labels.workspaceId, messageLabels.workspaceId),
+              eq(labels.id, messageLabels.labelId),
+            ),
+          )
+          .where(
+            and(
+              eq(messageLabels.workspaceId, messages.workspaceId),
+              eq(messageLabels.messageId, messages.id),
+              ilike(labels.name, pattern),
+            ),
+          )
+
+        const rows = await db
           .select({
             id: messages.id,
             senderName: messages.senderName,
@@ -74,7 +97,18 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
             and(
               eq(messages.workspaceId, workspaceId),
               search
-                ? sql`(${ilike(messages.senderName, pattern)} or ${ilike(messages.subject, pattern)} or ${ilike(messages.body, pattern)})`
+                ? or(
+                    ilike(messages.senderName, pattern),
+                    ilike(messages.senderEmail, pattern),
+                    ilike(messages.subject, pattern),
+                    ilike(messages.body, pattern),
+                    sql`exists (
+                      select 1 from jsonb_array_elements_text(
+                        '[]'::jsonb || ${messages.to} || ${messages.cc} || ${messages.bcc}
+                      ) as recipient(address) where address ilike ${pattern}
+                    )`,
+                    exists(matchingLabel),
+                  )
                 : undefined,
               cursor
                 ? sql`(${messages.receivedAt}, ${messages.id}) < (${cursor.receivedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
@@ -83,6 +117,12 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
           )
           .orderBy(sql`${messages.receivedAt} desc nulls last`, sql`${messages.id} desc nulls last`)
           .limit(INBOX_PAGE_SIZE + 1)
+        const labelsByMessage = await readMessageLabels(
+          db,
+          workspaceId,
+          rows.map(({ id }) => id),
+        )
+        return rows.map((row) => ({ ...row, labels: labelsByMessage.get(row.id) ?? [] }))
       }),
   }
 }

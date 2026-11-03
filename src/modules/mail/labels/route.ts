@@ -2,6 +2,7 @@ import { OpenAPIHono, z } from '@hono/zod-openapi'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import type { MailEnvironment, ResolveWorkspace } from '../inbox/listMessages/types.js'
 import { authorizeWorkspaceMail } from '../inbox/workspaceAuthorization.js'
+import { labelColors } from './colors.js'
 import type { LabelCursor, LabelRepository, LabelTarget } from './types.js'
 
 const base = '/api/v1/workspaces/:slug/mail'
@@ -62,6 +63,12 @@ export function createLabelRoutes(
         : null,
     })
   })
+  app.get(`${base}/labels/palette`, async (c) =>
+    c.json({
+      colors: labelColors,
+      suggestedColor: await repository.suggestColor(c.get('workspaceId')),
+    }),
+  )
   app.post(`${base}/labels`, async (c) => {
     if (!isAllowedOrigin(c.req.header('origin') ?? ''))
       return error(c, 403, 'untrusted_origin', 'A trusted Origin is required.')
@@ -73,6 +80,7 @@ export function createLabelRoutes(
     }
     const parsed = z
       .object({
+        color: z.enum(labelColors).optional(),
         name: z
           .string()
           .trim()
@@ -81,8 +89,13 @@ export function createLabelRoutes(
           .refine((name) => !name.includes('\0')),
       })
       .safeParse(body)
-    if (!parsed.success) return error(c, 400, 'invalid_label', 'A valid label name is required.')
-    const label = await repository.createLabel(c.get('workspaceId'), parsed.data.name)
+    if (!parsed.success)
+      return error(c, 400, 'invalid_label', 'A valid label name and palette color are required.')
+    const label = await repository.createLabel(
+      c.get('workspaceId'),
+      parsed.data.name,
+      parsed.data.color,
+    )
     if (!label) return error(c, 409, 'label_exists', 'A label with this name already exists.')
     return c.json(label, 201)
   })
