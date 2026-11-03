@@ -1,5 +1,6 @@
 import { OpenAPIHono, z } from '@hono/zod-openapi'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { requireMailCapability } from '../context/capabilityPolicy.js'
 import type { MailEnvironment, ResolveWorkspace } from '../inbox/listMessages/types.js'
 import { authorizeWorkspaceMail } from '../inbox/workspaceAuthorization.js'
 import { labelColors } from './colors.js'
@@ -20,7 +21,7 @@ export function createLabelRoutes(
   isAllowedOrigin: (origin: string) => boolean,
 ) {
   const app = new OpenAPIHono<MailEnvironment>()
-  app.use(`${base}/*`, authorizeWorkspaceMail(resolveWorkspace))
+  app.use(`${base}/*`, authorizeWorkspaceMail(resolveWorkspace), requireMailCapability)
   const error = (
     c: Parameters<typeof problemDetailsResponse>[0],
     status: 400 | 403 | 404 | 409,

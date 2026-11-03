@@ -27,6 +27,13 @@ describe('mail capability policy', () => {
     ['POST', '/api/v1/mail/discard', 'mail.compose'],
     ['POST', '/api/v1/mail/attachments', 'mail.compose'],
     ['POST', '/api/v1/mail/attachments/att-1/complete', 'mail.compose'],
+    ['GET', '/api/v1/workspaces/acme/mail/labels', 'mail.read'],
+    ['GET', '/api/v1/workspaces/acme/mail/labels/palette', 'mail.read'],
+    ['GET', '/api/v1/workspaces/acme/mail/messages/m1/labels', 'mail.read'],
+    ['GET', '/api/v1/workspaces/acme/mail/sent/m1/labels', 'mail.read'],
+    ['POST', '/api/v1/workspaces/acme/mail/labels', 'mail.compose'],
+    ['PUT', '/api/v1/workspaces/acme/mail/messages/m1/labels/l1', 'mail.compose'],
+    ['DELETE', '/api/v1/workspaces/acme/mail/sent/m1/labels/l1', 'mail.compose'],
   ] as const)('maps %s %s to %s', (method, path, capability) => {
     expect(findMailCapabilityRule(method, path)?.capability).toBe(capability)
   })
@@ -114,6 +121,7 @@ describe('policy coverage of the real routes', () => {
       mailRepository: { findMessages: vi.fn() } as never,
       workspaces: { reader: {} as never, consumeBudget: vi.fn() },
       attachments: {} as never,
+      labels: {} as never,
       outgoingMail: { repository: {}, deliver: vi.fn(), resolveAttachments: vi.fn() } as never,
     })
     const mailRoutes = app.routes.filter(
@@ -122,7 +130,7 @@ describe('policy coverage of the real routes', () => {
         /^\/api\/v1\/(?:mail|workspaces\/:slug\/mail)(?:\/|$)/.test(route.path),
     )
 
-    expect(mailRoutes.length).toBeGreaterThanOrEqual(10)
+    expect(mailRoutes.length).toBeGreaterThanOrEqual(15)
     const unlisted = mailRoutes
       .filter(
         (route) => !findMailCapabilityRule(route.method, route.path.replaceAll(/:[A-Za-z]+/g, 'x')),

@@ -8,7 +8,11 @@ declare module 'hono' {
   }
 }
 
-type Rule = { method: 'GET' | 'POST'; path: RegExp; capability: Capability | null }
+type Rule = {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  path: RegExp
+  capability: Capability | null
+}
 
 // Every mail route must be listed here. A route that is not listed is denied, so a new route cannot
 // ship without choosing its capability. `null` means workspace membership alone is enough.
@@ -33,6 +37,26 @@ export const mailCapabilityPolicy: readonly Rule[] = [
   {
     method: 'POST',
     path: /^\/api\/v1\/mail\/attachments\/[^/]+\/complete$/,
+    capability: 'mail.compose',
+  },
+  {
+    method: 'GET',
+    path: /^\/api\/v1\/workspaces\/[^/]+\/mail\/(?:labels(?:\/palette)?|(?:messages|sent)\/[^/]+\/labels)$/,
+    capability: 'mail.read',
+  },
+  {
+    method: 'POST',
+    path: /^\/api\/v1\/workspaces\/[^/]+\/mail\/labels$/,
+    capability: 'mail.compose',
+  },
+  {
+    method: 'PUT',
+    path: /^\/api\/v1\/workspaces\/[^/]+\/mail\/(?:messages|sent)\/[^/]+\/labels\/[^/]+$/,
+    capability: 'mail.compose',
+  },
+  {
+    method: 'DELETE',
+    path: /^\/api\/v1\/workspaces\/[^/]+\/mail\/(?:messages|sent)\/[^/]+\/labels\/[^/]+$/,
     capability: 'mail.compose',
   },
 ]
