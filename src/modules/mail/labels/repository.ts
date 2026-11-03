@@ -1,17 +1,8 @@
 import type { MailClient, MailPool } from '../inbox/listMessages/types.js'
 import { inWorkspaceTransaction } from '../infrastructure/database/workspaceTransaction.js'
+import { labelColors } from './colors.js'
 import type { Label, LabelRepository, LabelTarget } from './types.js'
 
-const colors = [
-  '#2563eb',
-  '#dc2626',
-  '#16a34a',
-  '#9333ea',
-  '#ea580c',
-  '#0891b2',
-  '#be185d',
-  '#4f46e5',
-]
 const selectLabels = 'select l.id, l.name, l.color from mail.label l'
 
 async function targetExists(
@@ -47,6 +38,19 @@ async function getLabels(
   )
   return result.rows
 }
+async function suggestColor(client: MailClient, workspace: string) {
+  const usage = await client.query<{ color: string; count: string }>(
+    'select color, count(*)::text as count from mail.label where workspace_id = $1 group by color',
+    [workspace],
+  )
+  const counts = new Map(usage.rows.map((row) => [row.color, Number(row.count)]))
+  return labelColors.reduce(
+    (best, candidate) =>
+      (counts.get(candidate) ?? 0) < (counts.get(best) ?? 0) ? candidate : best,
+    labelColors[0],
+  )
+}
+
 export function createLabelRepository(pool: MailPool): LabelRepository {
   return {
     searchLabels: (workspace, query, cursor) =>
@@ -70,21 +74,14 @@ export function createLabelRepository(pool: MailPool): LabelRepository {
           exactMatch: exact?.rows[0] ?? null,
         }
       }),
-    createLabel: (workspace, name) =>
+    suggestColor: (workspace) =>
+      inWorkspaceTransaction(pool, workspace, (client) => suggestColor(client, workspace)),
+    createLabel: (workspace, name, requestedColor) =>
       inWorkspaceTransaction(pool, workspace, async (client) => {
         await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
           `mailflow-label-colors:${workspace}`,
         ])
-        const usage = await client.query<{ color: string; count: string }>(
-          'select color, count(*)::text as count from mail.label where workspace_id = $1 group by color',
-          [workspace],
-        )
-        const counts = new Map(usage.rows.map((row) => [row.color, Number(row.count)]))
-        const color = colors.reduce(
-          (best, candidate) =>
-            (counts.get(candidate) ?? 0) < (counts.get(best) ?? 0) ? candidate : best,
-          colors[0] ?? '#2563eb',
-        )
+        const color = requestedColor ?? (await suggestColor(client, workspace))
         const result = await client.query<Label>(
           'insert into mail.label (workspace_id, name, color) values ($1, $2, $3) on conflict do nothing returning id, name, color',
           [workspace, name, color],

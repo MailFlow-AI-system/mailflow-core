@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg'
+import type { Label } from '../../labels/types.js'
 
 export type MailPool = Pick<Pool, 'connect'>
 export type MailClient = PoolClient
@@ -8,6 +9,7 @@ export type MailEnvironment = { Variables: { workspaceId: string } }
 export type MailMessage = {
   id: string
   senderName: string
+  labels?: Label[]
   subject: string
   body: string
   receivedAt: Date
@@ -17,6 +19,7 @@ export type MessageCursor = Pick<MailMessage, 'id' | 'receivedAt'>
 
 export type MessageDetail = {
   id: string
+  labels?: Label[]
   subject: string
   senderName: string | null
   senderEmail: string | null

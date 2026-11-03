@@ -7,7 +7,8 @@ export type LabelRepository = {
     query: string,
     cursor: LabelCursor | null,
   ): Promise<{ items: Label[]; nextCursor: LabelCursor | null; exactMatch: Label | null }>
-  createLabel(workspaceId: string, name: string): Promise<Label | null>
+  suggestColor(workspaceId: string): Promise<string>
+  createLabel(workspaceId: string, name: string, color?: string): Promise<Label | null>
   messageLabels(
     workspaceId: string,
     userId: string,
