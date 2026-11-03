@@ -114,7 +114,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
     })
     await owner.query(`GRANT USAGE ON SCHEMA mail TO "${role}";
       GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO "${role}";
-      GRANT SELECT ON mail.attachment, mail.inbox_message_attachment TO "${role}"`)
+      GRANT SELECT ON mail.attachment, mail.inbox_message_attachment, mail.label, mail.message_label TO "${role}"`)
     ownerUrl.username = role
     ownerUrl.password = 'mail_test_local_only'
     pool = new Pool({ connectionString: ownerUrl.href, max: 1 })
@@ -124,6 +124,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
 
   beforeEach(async () => {
     await owner.query('DELETE FROM mail.message')
+    await owner.query('DELETE FROM mail.label')
     await inWorkspaceTransaction(pool, 'workspace-a', async (client) => {
       await drizzle(client)
         .insert(messages)
@@ -184,6 +185,67 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       attachmentId,
     ])
     await owner.query('DELETE FROM mail.attachment WHERE id=$1', [attachmentId])
+  })
+
+  it('matches associated labels case-insensitively without duplicating results across pages', async () => {
+    const labelId = randomUUID()
+    const otherLabelId = randomUUID()
+    await owner.query(
+      `INSERT INTO mail.label (workspace_id, id, name, color) VALUES
+        ('workspace-a', $1, 'Budget 100%_review', '#2563eb'),
+        ('workspace-a', $2, 'Budget 100%_reviewed', '#9333ea'),
+        ('workspace-a', $3, 'Unassigned Budget', '#2563eb'),
+        ('workspace-b', $4, 'Foreign Budget', '#2563eb')`,
+      [labelId, otherLabelId, randomUUID(), randomUUID()],
+    )
+    const matches = fixtures.slice(0, 10).map(({ id }) => id)
+    await owner.query(
+      `INSERT INTO mail.message_label (workspace_id, message_id, label_id)
+        SELECT 'workspace-a', message_id, $2 FROM unnest($1::uuid[]) AS message_id`,
+      [matches, labelId],
+    )
+    await owner.query(
+      `INSERT INTO mail.message_label (workspace_id, message_id, label_id)
+        VALUES ('workspace-a', $1, $2)`,
+      [matches[0], otherLabelId],
+    )
+
+    const q = new URLSearchParams({ q: '100%_REVIEW' })
+    const first = await getPage(`?${q}`)
+    expect(first.items.map(({ id }) => id)).toEqual(matches.slice(0, 8))
+    expect(first.items[0]).toMatchObject({
+      labels: [
+        { id: labelId, name: 'Budget 100%_review', color: '#2563eb' },
+        { id: otherLabelId, name: 'Budget 100%_reviewed', color: '#9333ea' },
+      ],
+    })
+    expect(
+      await createMailMessageRepository(pool).findMessage?.(
+        'workspace-a',
+        matches[0] ?? '',
+        'user',
+      ),
+    ).toMatchObject({ labels: [{ id: labelId }, { id: otherLabelId }] })
+    expect(first.nextCursor).not.toBeNull()
+    q.set('cursor', first.nextCursor ?? '')
+    const second = await getPage(`?${q}`)
+    expect(second.items.map(({ id }) => id)).toEqual(matches.slice(8))
+    expect(second.nextCursor).toBeNull()
+    expect((await getPage('?q=Unassigned')).items).toEqual([])
+    expect((await getPage('?q=Foreign')).items).toEqual([])
+  })
+
+  it('matches sender, To, Cc, and Bcc addresses', async () => {
+    await owner.query(
+      `UPDATE mail.message SET sender_email = 'inbound@example.test', "to" = '["direct@example.test"]',
+        cc = '["copy@example.test"]', bcc = '["hidden@example.test"]' WHERE id = $1`,
+      [fixtures[0]?.id],
+    )
+    for (const address of ['INBOUND@', 'Direct@', 'copy@', 'hidden@']) {
+      expect(
+        (await getPage(`?${new URLSearchParams({ q: address })}`)).items.map(({ id }) => id),
+      ).toEqual([fixtures[0]?.id])
+    }
   })
 
   it('paginates eight at a time across timestamp ties, returns the partial page, then ends', async () => {

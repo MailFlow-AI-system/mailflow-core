@@ -78,6 +78,13 @@
       "when": 1793274618970,
       "tag": "0010_add_inbox_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793703603221,
+      "tag": "0011_add_labels",
+      "breakpoints": true
     }
   ]
 }

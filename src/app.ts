@@ -14,6 +14,7 @@ import {
 } from '#modules/identityWorkspace'
 import {
   createAttachmentModule,
+  createLabelRoutes,
   createMailContextMiddleware,
   createMailContextModule,
   createMailModule,
@@ -34,6 +35,7 @@ export function createApp({
   allowedAuthOrigins,
   isAllowedAuthOrigin,
   mailRepository,
+  labels,
   outgoingMail,
   attachments,
   workspaces,
@@ -71,6 +73,15 @@ export function createApp({
       '/',
       createAttachmentModule(
         attachments,
+        isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
+      ),
+    )
+  if (labels && workspaces)
+    app.route(
+      '/',
+      createLabelRoutes(
+        labels,
+        (userId, slug) => workspaces.reader.context(userId, slug),
         isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
       ),
     )
