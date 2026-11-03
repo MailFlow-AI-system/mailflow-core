@@ -140,6 +140,7 @@ export function createOutgoingMailModule(
       html: message.html,
       text: message.text,
       date: (message.sentAt ?? message.createdAt)?.toISOString() ?? null,
+      labels: message.labels,
       attachments: (message.attachments ?? []).map(
         ({ id, filename, contentType, size, contentId }) => ({
           id,

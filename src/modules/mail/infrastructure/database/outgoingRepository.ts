@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { assertMailContext, type MailContext } from '../../context/types.js'
 import {
@@ -7,6 +7,7 @@ import {
   type OutgoingRepository,
   type SentAttachment,
 } from '../../outgoing/types.js'
+import { readMessageLabels } from './readMessageLabels.js'
 import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
 import { outgoingEmails } from './schema/outgoingEmails.js'
 
@@ -22,6 +23,14 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
     text: outgoingEmails.text,
     sentAt: outgoingEmails.sentAt,
     createdAt: outgoingEmails.createdAt,
+  }
+  function readSentLabels(context: MailContext, messageIds: string[]) {
+    return database.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('mailflow.workspace_id', ${context.workspaceId}, true)`,
+      )
+      return readMessageLabels(tx, context.workspaceId, messageIds, context.userId)
+    })
   }
   async function sentAttachments(context: MailContext, messageIds: string[]) {
     const byMessage = new Map<string, SentAttachment[]>()
@@ -381,11 +390,17 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
         .orderBy(desc(outgoingEmails.sentAt), desc(outgoingEmails.id))
         .limit(21)
         .offset(offset)
-      const metadata = await sentAttachments(
-        context,
-        rows.map(({ id }) => id),
-      )
-      return rows.map((row) => ({ ...row, attachments: metadata.get(row.id) ?? [] }))
+      if (!rows.length) return []
+      const ids = rows.map(({ id }) => id)
+      const [metadata, labelsByMessage] = await Promise.all([
+        sentAttachments(context, ids),
+        readSentLabels(context, ids),
+      ])
+      return rows.map((row) => ({
+        ...row,
+        attachments: metadata.get(row.id) ?? [],
+        labels: labelsByMessage.get(row.id) ?? [],
+      }))
     },
     findSent: async (context, id) => {
       assertMailContext(context)
@@ -402,8 +417,15 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           ),
         )
       if (!record) return null
-      const metadata = await sentAttachments(context, [record.id])
-      return { ...record, attachments: metadata.get(record.id) ?? [] }
+      const [metadata, labelsByMessage] = await Promise.all([
+        sentAttachments(context, [record.id]),
+        readSentLabels(context, [record.id]),
+      ])
+      return {
+        ...record,
+        attachments: metadata.get(record.id) ?? [],
+        labels: labelsByMessage.get(record.id) ?? [],
+      }
     },
   }
 }

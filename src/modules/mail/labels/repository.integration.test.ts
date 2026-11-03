@@ -70,6 +70,20 @@ describe('label repository', () => {
     expect(labels.every(Boolean)).toBe(true)
     expect(new Set(labels.map((label) => label?.color)).size).toBe(8)
   })
+  it('persists the selected color and suggests a least-used color per workspace', async () => {
+    expect(await repo.createLabel('custom-color', 'Choice', '#2563eb')).toMatchObject({
+      name: 'Choice',
+      color: '#2563eb',
+    })
+    expect(await repo.suggestColor('custom-color')).toBe('#dc2626')
+    expect(await repo.suggestColor('different-colors')).toBe('#2563eb')
+    expect(await repo.createLabel('custom-color', 'Override', '#9333ea')).toMatchObject({
+      color: '#9333ea',
+    })
+    expect((await repo.searchLabels('custom-color', 'Override', null)).exactMatch?.color).toBe(
+      '#9333ea',
+    )
+  })
   it('prevents concurrent duplicate names within each workspace', async () => {
     const result = await Promise.all([
       repo.createLabel('a', 'Concurrent'),

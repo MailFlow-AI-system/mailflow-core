@@ -1,4 +1,5 @@
 import type { MailContext } from '../context/types.js'
+import type { Label } from '../labels/types.js'
 import type { SendEmailInput } from './contract.js'
 
 export class MessageConflictError extends Error {}
@@ -46,6 +47,7 @@ export type SentEmail = {
   sentAt: Date | null
   createdAt?: Date
   attachments?: SentAttachment[]
+  labels?: Label[]
 }
 export type OutgoingRepository = {
   reserve: (
