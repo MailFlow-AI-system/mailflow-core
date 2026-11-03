@@ -1,11 +1,12 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { describe, expect, it, vi } from 'vitest'
+import { resolveCapabilities } from '#modules/identityWorkspace'
 import { createLabelRoutes } from './route.js'
 
 const label = { id: '00000000-0000-4000-8000-000000000001', name: 'Invoice', color: '#2563eb' }
 const messageId = '00000000-0000-4000-8000-000000000002'
 
-function setup(authenticated = true) {
+function setup(authenticated = true, role: Parameters<typeof resolveCapabilities>[0] = 'member') {
   const repository = {
     searchLabels: vi.fn().mockResolvedValue({ items: [], nextCursor: null, exactMatch: label }),
     suggestColor: vi.fn().mockResolvedValue('#9333ea'),
@@ -13,7 +14,9 @@ function setup(authenticated = true) {
     messageLabels: vi.fn().mockResolvedValue([label]),
     changeMessageLabel: vi.fn().mockResolvedValue([label]),
   }
-  const resolveWorkspace = vi.fn().mockResolvedValue({ id: 'workspace-a' })
+  const resolveWorkspace = vi
+    .fn()
+    .mockResolvedValue({ id: 'workspace-a', capabilities: resolveCapabilities(role) })
   const app = new OpenAPIHono()
   app.use('*', async (c, next) => {
     if (authenticated) c.set('authSession', { user: { id: 'user-a' }, session: { id: 's' } })
@@ -133,5 +136,46 @@ describe('workspace labels', () => {
       label.id,
       true,
     )
+  })
+})
+
+describe('label capabilities', () => {
+  const origin = { Origin: 'https://mail.example.test' }
+  const base = '/api/v1/workspaces/acme/mail'
+
+  it.each(['viewer', 'analyst'] as const)(
+    'lets a %s read labels but not change them',
+    async (role) => {
+      const { app, repository } = setup(true, role)
+
+      expect((await app.request(`${base}/labels`)).status).toBe(200)
+      expect((await app.request(`${base}/messages/${messageId}/labels`)).status).toBe(200)
+      for (const [method, path, body] of [
+        ['POST', `${base}/labels`, JSON.stringify({ name: 'Invoice' })],
+        ['PUT', `${base}/messages/${messageId}/labels/${label.id}`, undefined],
+        ['DELETE', `${base}/sent/${messageId}/labels/${label.id}`, undefined],
+      ] as const) {
+        const response = await app.request(path, {
+          method,
+          headers: { ...origin, 'Content-Type': 'application/json' },
+          ...(body ? { body } : {}),
+        })
+        expect(response.status).toBe(403)
+        expect(await response.json()).toMatchObject({ code: 'insufficient_capability' })
+      }
+      expect(repository.createLabel).not.toHaveBeenCalled()
+      expect(repository.changeMessageLabel).not.toHaveBeenCalled()
+    },
+  )
+
+  it('lets a member change labels', async () => {
+    const { app } = setup(true, 'member')
+
+    const response = await app.request(`${base}/messages/${messageId}/labels/${label.id}`, {
+      method: 'PUT',
+      headers: origin,
+    })
+
+    expect(response.status).toBe(200)
   })
 })
