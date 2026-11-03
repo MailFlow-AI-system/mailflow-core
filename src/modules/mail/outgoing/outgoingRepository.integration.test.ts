@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { Client, Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createOutgoingRepository } from '../infrastructure/database/outgoingRepository.js'
+import { createLabelRepository } from '../labels/repository.js'
 import { sendEmail } from './sendEmail.js'
 import { ProviderRejectedError } from './types.js'
 
@@ -56,6 +57,32 @@ integration('outgoing mail PostgreSQL persistence', () => {
         sentAt: expect.any(Date),
       }),
     ])
+  })
+  it('includes persisted labels in Sent list and detail for the message owner', async () => {
+    await sendEmail({ repository, deliver: async () => 'provider-id' }, context(), input)
+    const labels = createLabelRepository(pool)
+    const label = await labels.createLabel(context().workspaceId, `Sent-${randomUUID()}`)
+    if (!label) throw new Error('Expected fixture label')
+    try {
+      await labels.changeMessageLabel(
+        context().workspaceId,
+        owner,
+        'sent',
+        input.id,
+        label.id,
+        true,
+      )
+      expect(await repository.listSent(context(), 0)).toMatchObject([
+        { id: input.id, labels: [label] },
+      ])
+      expect(await repository.findSent?.(context(), input.id)).toMatchObject({ labels: [label] })
+      expect(await repository.findSent?.(context(other), input.id)).toBeNull()
+    } finally {
+      await client.query('DELETE FROM mail.label WHERE workspace_id=$1 AND id=$2', [
+        context().workspaceId,
+        label.id,
+      ])
+    }
   })
   it('does not claim a sender when an uncertain delivery is retried with a changed sender', async () => {
     const initial = {
