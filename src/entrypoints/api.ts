@@ -6,6 +6,7 @@ import {
   cleanupOrphanObjects,
   createAttachmentRepository,
   createAttachmentService,
+  createLabelRepository,
   createMailMessageRepository,
   createObjectStorage,
   createOutgoingRepository,
@@ -45,6 +46,7 @@ const app = createApp({
   checkDatabase: database.check,
   ...identityWorkspace,
   mailRepository: createMailMessageRepository(database.pool),
+  labels: createLabelRepository(database.pool),
   attachments,
   outgoingMail: {
     repository: outgoingRepository,
