@@ -11,6 +11,7 @@ import {
   assertMailDatabaseRole,
   createAttachmentRepository,
   createAttachmentService,
+  createDraftRepository,
   createMailMessageRepository,
   createOutgoingRepository,
 } from '../../src/modules/mail/index.js'
@@ -198,7 +199,9 @@ const app = createApp({
   mailRepository: createMailMessageRepository(fixture.pool),
   mailWorkspaceBaseOrigin: `http://${baseHost}:3003`,
   attachments,
+  drafts: createDraftRepository(fixture.pool),
   outgoingMail: {
+    drafts: createDraftRepository(fixture.pool),
     resolveAttachments: attachments.resolveReferences,
     repository: createOutgoingRepository(drizzle(fixture.pool)),
     // Keep browser acceptance inside the isolated fixture; never call an external provider.
@@ -280,7 +283,11 @@ app.post('/__fixture/control', async (context) => {
     revokeAfterSelection = false
     failNextEntry = false
     failNextBudget = false
-  } else if (action === 'reset-sent') await resetSent()
+  } else if (action === 'reset-drafts')
+    await fixture.admin.query('delete from mail.draft where user_id=ANY($1::text[])', [
+      [fixture.userId, fixture.otherId],
+    ])
+  else if (action === 'reset-sent') await resetSent()
   else if (action === 'fail-next') failNext = true
   else if (action === 'fail-next-entry') failNextEntry = true
   else if (action === 'fail-next-budget') failNextBudget = true
@@ -314,6 +321,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
           `workspace-discovery:${emptyUser.user.id}`,
         ])
         await telemetry.observability.shutdown()
+        await fixture.admin.query('DELETE FROM mail.draft WHERE user_id=ANY($1::text[])', [
+          [fixture.userId, fixture.otherId],
+        ])
         await fixture.admin.query('DELETE FROM mail.outgoing_email WHERE user_id=ANY($1::text[])', [
           [fixture.userId, fixture.otherId],
         ])

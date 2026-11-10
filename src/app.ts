@@ -14,6 +14,7 @@ import {
 } from '#modules/identityWorkspace'
 import {
   createAttachmentModule,
+  createDraftRoutes,
   createLabelRoutes,
   createMailContextMiddleware,
   createMailContextModule,
@@ -36,6 +37,7 @@ export function createApp({
   isAllowedAuthOrigin,
   mailRepository,
   labels,
+  drafts,
   outgoingMail,
   attachments,
   workspaces,
@@ -68,6 +70,14 @@ export function createApp({
   app.use('/api/v1/mail/*', unlessLegacyMessages(resolveMailContext))
   app.use('/api/v1/mail/*', unlessLegacyMessages(requireMailCapability))
   app.route('/', createMailContextModule())
+  if (drafts)
+    app.route(
+      '/',
+      createDraftRoutes(
+        drafts,
+        isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
+      ),
+    )
   if (attachments)
     app.route(
       '/',

@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi'
+import { draftReferenceSchema } from '../drafts/contract.js'
 
 const attachmentSchema = z.strictObject({
   id: z.uuid(),
@@ -13,6 +14,7 @@ const attachmentSchema = z.strictObject({
 export const sendEmailSchema = z
   .strictObject({
     id: z.uuid(),
+    draft: draftReferenceSchema.optional(),
     to: z.array(z.email()).min(1).max(50),
     cc: z.array(z.email()).max(50).default([]),
     bcc: z.array(z.email()).max(50).default([]),
@@ -81,7 +83,13 @@ export const sentEmailsRoute = createRoute({
   tags: ['Mail'],
   summary: 'List the current user sent emails in the authorized workspace',
   request: {
-    query: z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }),
+    query: z.object({
+      offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+      q: z.string().trim().max(200).default('').openapi({
+        description:
+          'Optional case-insensitive literal search across recipients, subject, text and label names.',
+      }),
+    }),
   },
   responses: {
     200: {

@@ -12,6 +12,11 @@ import {
 describe('mail capability policy', () => {
   it.each([
     ['GET', '/api/v1/mail/context', null],
+    ['GET', '/api/v1/mail/drafts', 'mail.read'],
+    ['GET', '/api/v1/mail/drafts/d1', 'mail.read'],
+    ['PUT', '/api/v1/mail/drafts/d1', 'mail.compose'],
+    ['DELETE', '/api/v1/mail/drafts/d1', 'mail.compose'],
+    ['POST', '/api/v1/mail/drafts/discard', 'mail.compose'],
     ['GET', '/api/v1/mail/sent', 'mail.read'],
     ['GET', '/api/v1/mail/sent/0198f0a8-0000-7000-8000-000000000001', 'mail.read'],
     ['GET', '/api/v1/mail/attachments/att-1', 'mail.read'],
@@ -122,6 +127,7 @@ describe('policy coverage of the real routes', () => {
       workspaces: { reader: {} as never, consumeBudget: vi.fn() },
       attachments: {} as never,
       labels: {} as never,
+      drafts: {} as never,
       outgoingMail: { repository: {}, deliver: vi.fn(), resolveAttachments: vi.fn() } as never,
     })
     const mailRoutes = app.routes.filter(

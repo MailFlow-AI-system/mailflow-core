@@ -2,6 +2,7 @@ import type { Logger } from 'pino'
 import type { IdentityWorkspaceRuntime } from '#modules/identityWorkspace'
 import type {
   AttachmentService,
+  DraftRepository,
   LabelRepository,
   MailMessageRepository,
   OutgoingMail,
@@ -14,6 +15,7 @@ export type AppDependencies = IdentityWorkspaceRuntime & {
   logger: Logger
   checkDatabase: () => Promise<void>
   labels?: LabelRepository
+  drafts?: DraftRepository
   mailRepository?: MailMessageRepository
   outgoingMail?: OutgoingMail
   attachments?: AttachmentService
