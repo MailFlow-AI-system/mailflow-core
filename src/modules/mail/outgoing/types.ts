@@ -1,4 +1,5 @@
 import type { MailContext } from '../context/types.js'
+import type { DraftRepository } from '../drafts/repository.js'
 import type { Label } from '../labels/types.js'
 import type { SendEmailInput } from './contract.js'
 
@@ -63,10 +64,11 @@ export type OutgoingRepository = {
   cleanupAbandoned: () => Promise<number>
   discard: (context: MailContext, input: DiscardInput) => Promise<DiscardResult>
   markSent: (context: MailContext, id: string, providerId: string) => Promise<void>
-  listSent: (context: MailContext, offset: number) => Promise<SentEmail[]>
+  listSent: (context: MailContext, offset: number, search?: string) => Promise<SentEmail[]>
   findSent?: (context: MailContext, id: string) => Promise<(SentEmail & { html: string }) | null>
 }
 export type OutgoingMail = {
+  drafts?: Pick<DraftRepository, 'complete'>
   repository: OutgoingRepository
   senderEmail?: string
   deliver: (input: ProviderEmailInput, idempotencyKey: string) => Promise<string>

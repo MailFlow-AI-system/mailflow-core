@@ -17,6 +17,10 @@ type Rule = {
 // Every mail route must be listed here. A route that is not listed is denied, so a new route cannot
 // ship without choosing its capability. `null` means workspace membership alone is enough.
 export const mailCapabilityPolicy: readonly Rule[] = [
+  { method: 'GET', path: /^\/api\/v1\/mail\/drafts(?:\/[^/]+)?$/, capability: 'mail.read' },
+  { method: 'PUT', path: /^\/api\/v1\/mail\/drafts\/[^/]+$/, capability: 'mail.compose' },
+  { method: 'DELETE', path: /^\/api\/v1\/mail\/drafts\/[^/]+$/, capability: 'mail.compose' },
+  { method: 'POST', path: /^\/api\/v1\/mail\/drafts\/discard$/, capability: 'mail.compose' },
   { method: 'GET', path: /^\/api\/v1\/mail\/context$/, capability: null },
   { method: 'GET', path: /^\/api\/v1\/mail\/sent(?:\/[^/]+)?$/, capability: 'mail.read' },
   {

@@ -24,6 +24,7 @@ import {
   inboxMessageAttachments,
   outgoingEmailAttachments,
 } from './schema/attachments.js'
+import { draftAttachments } from './schema/drafts.js'
 
 const leaseMilliseconds = 120_000
 
@@ -44,6 +45,18 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               eq(attachments.userId, record.userId),
               eq(attachments.workspaceId, record.workspaceId),
               gt(attachments.expiresAt, new Date()),
+              notExists(
+                transaction
+                  .select({ one: sql`1` })
+                  .from(draftAttachments)
+                  .where(
+                    and(
+                      eq(draftAttachments.userId, attachments.userId),
+                      eq(draftAttachments.workspaceId, attachments.workspaceId),
+                      eq(draftAttachments.attachmentId, attachments.id),
+                    ),
+                  ),
+              ),
               notExists(
                 transaction
                   .select({ one: sql`1` })
@@ -143,6 +156,18 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
             and(
               isNotNull(attachments.workspaceId),
               lte(attachments.expiresAt, now),
+              notExists(
+                transaction
+                  .select({ one: sql`1` })
+                  .from(draftAttachments)
+                  .where(
+                    and(
+                      eq(draftAttachments.userId, attachments.userId),
+                      eq(draftAttachments.workspaceId, attachments.workspaceId),
+                      eq(draftAttachments.attachmentId, attachments.id),
+                    ),
+                  ),
+              ),
               or(isNull(attachments.claimToken), lte(attachments.claimExpiresAt, now)),
               notExists(
                 transaction
@@ -212,8 +237,26 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
               ),
             ),
           )
+        const draftAssociated = await transaction
+          .selectDistinct({
+            userId: draftAttachments.userId,
+            workspaceId: draftAttachments.workspaceId,
+            attachmentId: draftAttachments.attachmentId,
+          })
+          .from(draftAttachments)
+          .where(
+            or(
+              ...rows.map((row) =>
+                and(
+                  eq(draftAttachments.userId, row.userId),
+                  eq(draftAttachments.workspaceId, row.workspaceId as string),
+                  eq(draftAttachments.attachmentId, row.id),
+                ),
+              ),
+            ),
+          )
         const protectedIds = new Set(
-          [...associated, ...inboxAssociated].map((row) =>
+          [...associated, ...inboxAssociated, ...draftAssociated].map((row) =>
             JSON.stringify([row.workspaceId, row.userId, row.attachmentId]),
           ),
         )
@@ -283,7 +326,19 @@ export function createAttachmentRepository(database: NodePgDatabase): Attachment
           ),
         )
         .limit(1)
-      return Boolean(inboxAssociation)
+      if (inboxAssociation) return true
+      const [draftAssociation] = await database
+        .select({ id: draftAttachments.attachmentId })
+        .from(draftAttachments)
+        .where(
+          and(
+            eq(draftAttachments.workspaceId, workspaceId),
+            eq(draftAttachments.userId, userId),
+            eq(draftAttachments.attachmentId, id),
+          ),
+        )
+        .limit(1)
+      return Boolean(draftAssociation)
     },
     isFinalKeyReferenced: async (key, workspaceId) => {
       const [record] = await database

@@ -6,6 +6,7 @@ import {
   cleanupOrphanObjects,
   createAttachmentRepository,
   createAttachmentService,
+  createDraftRepository,
   createLabelRepository,
   createMailMessageRepository,
   createObjectStorage,
@@ -39,6 +40,7 @@ const attachments = createAttachmentService({
   storage: objectStorage,
 })
 const outgoingRepository = createOutgoingRepository(database.database)
+const drafts = createDraftRepository(database.pool)
 const app = createApp({
   config,
   logger,
@@ -47,8 +49,10 @@ const app = createApp({
   ...identityWorkspace,
   mailRepository: createMailMessageRepository(database.pool),
   labels: createLabelRepository(database.pool),
+  drafts,
   attachments,
   outgoingMail: {
+    drafts,
     repository: outgoingRepository,
     deliver: createResendDelivery(process.env),
     ...(process.env.RESEND_FROM_EMAIL ? { senderEmail: process.env.RESEND_FROM_EMAIL } : {}),
