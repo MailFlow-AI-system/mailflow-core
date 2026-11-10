@@ -84,6 +84,54 @@ integration('outgoing mail PostgreSQL persistence', () => {
       ])
     }
   })
+  it('searches recipients, subject, body and label names literally for the owner only', async () => {
+    const send = (
+      id: string,
+      extra: {
+        to?: string[]
+        cc?: string[]
+        bcc?: string[]
+        subject?: string
+        text?: string
+        html?: string
+      },
+    ) => {
+      const message = { ...input, id, deliveryKey: `key-${id}`, ...extra }
+      return sendEmail({ repository, deliver: async () => `provider-${id}` }, context(), message)
+    }
+    const byRecipient = randomUUID()
+    const byCc = randomUUID()
+    const bySubject = randomUUID()
+    const byBody = randomUUID()
+    const byLabel = randomUUID()
+    await send(byRecipient, { to: ['ada.lovelace@example.test'], bcc: [] })
+    await send(byCc, { cc: ['grace@navy.test'], bcc: [] })
+    await send(bySubject, { subject: 'Invoice 100%_final' })
+    await send(byBody, { text: 'Please review the ATTACHED contract', html: '<p>x</p>' })
+    await send(byLabel, {})
+    const labels = createLabelRepository(pool)
+    const label = await labels.createLabel(context().workspaceId, `Budget-${randomUUID()}`)
+    if (!label) throw new Error('Expected fixture label')
+    try {
+      await labels.changeMessageLabel(context().workspaceId, owner, 'sent', byLabel, label.id, true)
+      const ids = async (search: string, user = owner) =>
+        (await repository.listSent(context(user), 0, search)).map(({ id }) => id).sort()
+      expect(await ids('')).toHaveLength(5)
+      expect(await ids('LOVELACE')).toEqual([byRecipient])
+      expect(await ids('navy.test')).toEqual([byCc])
+      expect(await ids('invoice')).toEqual([bySubject])
+      expect(await ids('%')).toEqual([bySubject])
+      expect(await ids('attached contract')).toEqual([byBody])
+      expect(await ids(label.name.toLowerCase())).toEqual([byLabel])
+      expect(await ids('no such text')).toEqual([])
+      expect(await ids('invoice', other)).toEqual([])
+    } finally {
+      await client.query('DELETE FROM mail.label WHERE workspace_id=$1 AND id=$2', [
+        context().workspaceId,
+        label.id,
+      ])
+    }
+  })
   it('does not claim a sender when an uncertain delivery is retried with a changed sender', async () => {
     const initial = {
       repository,

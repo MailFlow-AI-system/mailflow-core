@@ -108,10 +108,17 @@ export function createOutgoingMailModule(
   })
   app.openapi(sendEmailRoute, async (context) => {
     try {
-      return context.json(
-        await sendEmail(dependencies, context.get('mailContext'), context.req.valid('json')),
-        200,
-      )
+      const input = context.req.valid('json')
+      if (input.draft && !dependencies.drafts) throw new Error('Draft storage unavailable')
+      const result = await sendEmail(dependencies, context.get('mailContext'), input)
+      if (input.draft)
+        await dependencies.drafts?.complete(
+          context.get('mailContext'),
+          input.draft.id,
+          input.draft.version,
+          result.id,
+        )
+      return context.json(result, 200)
     } catch (error) {
       const conflict = error instanceof MessageConflictError
       return problemDetailsResponse(context, {
@@ -153,8 +160,8 @@ export function createOutgoingMailModule(
     })
   })
   app.openapi(sentEmailsRoute, async (context) => {
-    const offset = context.req.valid('query').offset
-    const messages = await dependencies.repository.listSent(context.get('mailContext'), offset)
+    const { offset, q } = context.req.valid('query')
+    const messages = await dependencies.repository.listSent(context.get('mailContext'), offset, q)
     return context.json(
       {
         items: messages

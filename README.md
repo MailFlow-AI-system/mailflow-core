@@ -93,6 +93,27 @@ disambiguate. Missing, conflicting, or repeated selectors fail before any databa
 
 ## Listening
 
+Drafts use `GET /api/v1/mail/drafts`, plus `GET`, `PUT`, and `DELETE` on
+`/api/v1/mail/drafts/:id`. Apply Mail migration `0012_add_drafts` and repeat the
+existing runtime role grants for the new tables. Reads require `mail.read`;
+saving and discarding require `mail.compose`. Drafts belong to one authenticated
+user and workspace, including forced owner RLS on their content.
+
+Drafts and Sent accept an optional `q` (trimmed, at most 200 characters) that matches
+recipients, subject, body text, and label names as a case-insensitive literal substring,
+so `%` and `_` are ordinary characters. `POST /api/v1/mail/drafts/discard` deletes up to
+50 drafts by id and version in one request. Each draft is discarded in its own
+transaction and reported as `discarded` or `conflict`, so one stale version does not
+roll back the others. It requires `mail.compose` and a trusted Origin.
+
+Drafts store incomplete fields separately from immutable delivery reservations.
+Version checks reject stale edits; mutation IDs make uncertain save retries idempotent.
+Discarded and sent rows retain only an empty tombstone to reject delayed autosaves.
+Private file associations keep draft attachments alive through upload cleanup.
+Sending completes only the referenced draft version after provider acceptance, so
+a newer edit from another tab survives. A failed completion can retry the same
+immutable delivery without sending a second email.
+
 The local runner selects local defaults explicitly because `development` also names a published
 environment. Missing role/schema prerequisites fail startup before activation; RLS guards and
 shared migration history remain authoritative.

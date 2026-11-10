@@ -1,5 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  type SQLWrapper,
+  sql,
+} from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { assertMailContext, type MailContext } from '../../context/types.js'
 import {
@@ -9,6 +24,7 @@ import {
 } from '../../outgoing/types.js'
 import { readMessageLabels } from './readMessageLabels.js'
 import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
+import { draftAttachments } from './schema/drafts.js'
 import { outgoingEmails } from './schema/outgoingEmails.js'
 
 export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepository {
@@ -248,7 +264,21 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
               eq(attachments.workspaceId, workspaceId),
               inArray(attachments.id, ids),
               eq(attachments.status, 'clean'),
-              gt(attachments.expiresAt, new Date()),
+              or(
+                gt(attachments.expiresAt, new Date()),
+                exists(
+                  transaction
+                    .select({ one: sql`1` })
+                    .from(draftAttachments)
+                    .where(
+                      and(
+                        eq(draftAttachments.workspaceId, attachments.workspaceId),
+                        eq(draftAttachments.userId, attachments.userId),
+                        eq(draftAttachments.attachmentId, attachments.id),
+                      ),
+                    ),
+                ),
+              ),
             ),
           )
           .orderBy(asc(attachments.id))
@@ -375,21 +405,48 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           ),
         )
     },
-    listSent: async (context, offset) => {
+    listSent: async (context, offset, search = '') => {
       assertMailContext(context)
-      const rows = await database
-        .select(sentSelection)
-        .from(outgoingEmails)
-        .where(
-          and(
-            eq(outgoingEmails.userId, context.userId),
-            eq(outgoingEmails.workspaceId, context.workspaceId),
-            isNotNull(outgoingEmails.providerId),
-          ),
+      // Literal, case-insensitive substring match; LIKE wildcards in the text are escaped.
+      const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
+      const addressMatches = (column: SQLWrapper) =>
+        sql`exists (select 1 from jsonb_array_elements_text('[]'::jsonb || ${column}) as recipient(address)
+          where recipient.address ilike ${pattern})`
+      // The label match reads workspace-scoped rows, so the scope is set for this transaction.
+      const rows = await database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('mailflow.workspace_id', ${context.workspaceId}, true)`,
         )
-        .orderBy(desc(outgoingEmails.sentAt), desc(outgoingEmails.id))
-        .limit(21)
-        .offset(offset)
+        return tx
+          .select(sentSelection)
+          .from(outgoingEmails)
+          .where(
+            and(
+              eq(outgoingEmails.userId, context.userId),
+              eq(outgoingEmails.workspaceId, context.workspaceId),
+              isNotNull(outgoingEmails.providerId),
+              search
+                ? or(
+                    ilike(outgoingEmails.subject, pattern),
+                    ilike(outgoingEmails.text, pattern),
+                    ilike(outgoingEmails.recipientName, pattern),
+                    addressMatches(outgoingEmails.to),
+                    addressMatches(outgoingEmails.cc),
+                    addressMatches(outgoingEmails.bcc),
+                    sql`exists (select 1 from mail.sent_label sl
+                    join mail.label l on l.workspace_id = sl.workspace_id and l.id = sl.label_id
+                    where sl.workspace_id = ${outgoingEmails.workspaceId}
+                      and sl.message_id = ${outgoingEmails.id}
+                      and sl.user_id = ${outgoingEmails.userId}
+                      and l.name ilike ${pattern})`,
+                  )
+                : undefined,
+            ),
+          )
+          .orderBy(desc(outgoingEmails.sentAt), desc(outgoingEmails.id))
+          .limit(21)
+          .offset(offset)
+      })
       if (!rows.length) return []
       const ids = rows.map(({ id }) => id)
       const [metadata, labelsByMessage] = await Promise.all([
