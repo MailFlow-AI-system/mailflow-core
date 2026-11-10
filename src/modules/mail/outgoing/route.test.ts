@@ -16,6 +16,7 @@ const input = {
 }
 function setup(authenticated = true, workspace = false) {
   const outgoingMail = {
+    drafts: { complete: vi.fn(async () => {}) },
     repository: {
       reserve: vi.fn(async (value) => ({ ...value, providerId: null, createdAt: new Date() })),
       beginAttempt: vi.fn(async () => ({ token: 'attempt-token', canReject: true })),
@@ -80,6 +81,29 @@ function setup(authenticated = true, workspace = false) {
   return { app, outgoingMail, send, resolve }
 }
 describe('outgoing mail HTTP', () => {
+  it('retries draft completion after a lost response without delivering the email twice', async () => {
+    const { send, outgoingMail } = setup()
+    let accepted = false
+    outgoingMail.repository.reserve.mockImplementation(async (value) => ({
+      ...value,
+      providerId: accepted ? 'provider-id' : null,
+      createdAt: new Date(),
+    }))
+    outgoingMail.repository.markSent.mockImplementation(async () => {
+      accepted = true
+    })
+    outgoingMail.drafts.complete.mockRejectedValueOnce(new Error('temporary storage failure'))
+    const draft = { id: '00000000-0000-4000-8000-000000000002', version: 3 }
+    expect((await send({ ...input, draft })).status).toBe(502)
+    expect((await send({ ...input, draft })).status).toBe(200)
+    expect(outgoingMail.deliver).toHaveBeenCalledOnce()
+    expect(outgoingMail.drafts.complete).toHaveBeenLastCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-a' },
+      draft.id,
+      draft.version,
+      input.id,
+    )
+  })
   it('sends authenticated mail and returns a private confirmed response', async () => {
     const { send, outgoingMail } = setup()
     const response = await send()
@@ -131,8 +155,19 @@ describe('outgoing mail HTTP', () => {
     expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
       { userId: 'owner', workspaceId: 'workspace-a' },
       20,
+      '',
     )
     expect((await app.request('/api/v1/mail/sent?offset=-1')).status).toBe(400)
+  })
+  it('forwards a trimmed search text to Sent and rejects oversized searches', async () => {
+    const { app, outgoingMail } = setup()
+    expect((await app.request('/api/v1/mail/sent?q=%20invoice%20')).status).toBe(200)
+    expect(outgoingMail.repository.listSent).toHaveBeenLastCalledWith(
+      { userId: 'owner', workspaceId: 'workspace-a' },
+      0,
+      'invoice',
+    )
+    expect((await app.request(`/api/v1/mail/sent?q=${'a'.repeat(201)}`)).status).toBe(400)
   })
   it('authorizes scoped writes and Sent even with workspace UI enabled', async () => {
     const { send, app, outgoingMail } = setup(true, true)
@@ -274,6 +309,7 @@ describe('workspace-scoped Sent HTTP', () => {
     expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
       { userId: 'owner', workspaceId: 'workspace-a' },
       0,
+      '',
     )
   })
   it('uses the selected workspace rather than the account default for Sent', async () => {
@@ -296,6 +332,7 @@ describe('workspace-scoped Sent HTTP', () => {
     expect(outgoingMail.repository.listSent).toHaveBeenCalledWith(
       { userId: 'owner', workspaceId: 'workspace-b' },
       5,
+      '',
     )
     expect(response.headers.get('X-Workspace-Id')).toBe('workspace-b')
   })
