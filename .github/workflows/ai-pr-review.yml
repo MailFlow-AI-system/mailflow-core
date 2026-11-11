@@ -96,7 +96,7 @@ jobs:
           GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: ${{ github.base_ref == 'main' }}
           GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "false"
 
-          PR_REVIEWER__NUM_MAX_FINDINGS: "3"
+          PR_REVIEWER__NUM_MAX_FINDINGS: "5"
           PR_REVIEWER__REQUIRE_SECURITY_REVIEW: "true"
           PR_REVIEWER__REQUIRE_TESTS_REVIEW: "false"
           PR_REVIEWER__REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: "false"
