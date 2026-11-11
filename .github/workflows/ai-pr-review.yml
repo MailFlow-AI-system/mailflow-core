@@ -1,0 +1,110 @@
+name: AI PR Review
+
+# Advisory AI review with PR-Agent (https://github.com/The-PR-Agent/pr-agent).
+# The reviewer only points out problems; it never pushes code (contents: read).
+#
+# Auto review runs for:
+#   development <- any branch except sync/*
+#   staging     <- direct PRs only (promote/*, sync/* and development were already reviewed)
+#   main        <- release PRs (review + release notes as a comment)
+# Members can also comment /review, /describe or /ask on any PR.
+# Note: comment commands only work once this workflow exists on the default branch (main).
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [development, staging, main]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ai-pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-agent:
+    name: PR-Agent
+    if: >-
+      github.event.sender.type != 'Bot' && (
+        (github.event_name == 'pull_request'
+          && !github.event.pull_request.draft
+          && !startsWith(github.head_ref, 'sync/')
+          && (github.base_ref == 'development'
+            || github.base_ref == 'main'
+            || (github.base_ref == 'staging'
+              && !startsWith(github.head_ref, 'promote/')
+              && github.head_ref != 'development')))
+        || (github.event_name == 'issue_comment'
+          && github.event.issue.pull_request
+          && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+          && (startsWith(github.event.comment.body, '/review')
+            || startsWith(github.event.comment.body, '/describe')
+            || startsWith(github.event.comment.body, '/ask')))
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Select review focus
+        id: focus
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          case "$BASE_REF" in
+            main)
+              focus="This is a release PR into production. Focus on breaking changes, irreversible or destructive migrations, authentication and authorization, multi-tenant data isolation, RBAC, and production configuration."
+              ;;
+            staging)
+              focus="This PR targets staging directly and was not reviewed on development. Focus on correctness, migrations, environment variables and contracts between services."
+              ;;
+            *)
+              focus="Focus on correctness of the new code."
+              ;;
+          esac
+          {
+            echo "review<<EOF"
+            echo "$focus"
+            cat <<'RULES'
+          Only report issues you are confident are real and worth changing: broken functionality, logic errors, missing or wrong imports, type errors, data leaking across tenants, security flaws, dangerous migrations, or a refactor with a clear correctness or simplicity gain.
+          Do not comment on style, formatting, naming, documentation, personal preferences or speculative concerns ("consider...", "might...").
+          If you are not sure, do not report it. A review with no findings is a valid outcome.
+          Describe the problem, where it is and why it matters. Do not write replacement code; the author decides how to fix it.
+          RULES
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run PR-Agent
+        # pragent/pr-agent:0.50.0-github_action
+        uses: docker://pragent/pr-agent@sha256:548e894a88071180832b2f4233f734d0acd0db1a879e2fcbaa70bac8b8372ebe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+
+          CONFIG__MODEL: openrouter/anthropic/claude-haiku-5.5
+          CONFIG__FALLBACK_MODELS: '["openrouter/openai/gpt-6-luna"]'
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "200000"
+          CONFIG__MAX_MODEL_TOKENS: "200000"
+          CONFIG__NUM_RETRIES: "2"
+          IGNORE__GLOB: '["bun.lock", "database/migrations/**/meta/*.json"]'
+
+          GITHUB_ACTION_CONFIG__PR_ACTIONS: '["opened", "reopened", "ready_for_review"]'
+          GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: ${{ github.base_ref == 'main' }}
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "false"
+
+          PR_REVIEWER__NUM_MAX_FINDINGS: "3"
+          PR_REVIEWER__REQUIRE_SECURITY_REVIEW: "true"
+          PR_REVIEWER__REQUIRE_TESTS_REVIEW: "false"
+          PR_REVIEWER__REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: "false"
+          PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: "false"
+          PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: "false"
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ steps.focus.outputs.review }}
+
+          PR_DESCRIPTION__PUBLISH_DESCRIPTION_AS_COMMENT: "true"
+          PR_DESCRIPTION__EXTRA_INSTRUCTIONS: >-
+            Write release notes for the team: group user-facing changes, breaking changes,
+            migrations and configuration changes. Do not suggest code changes.
