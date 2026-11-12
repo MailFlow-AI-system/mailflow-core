@@ -89,6 +89,7 @@ jobs:
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "200000"
           CONFIG__MAX_MODEL_TOKENS: "200000"
           CONFIG__NUM_RETRIES: "2"
+          CONFIG__RESPONSE_LANGUAGE: pt-BR
           IGNORE__GLOB: '["bun.lock", "database/migrations/**/meta/*.json"]'
 
           GITHUB_ACTION_CONFIG__PR_ACTIONS: '["opened", "reopened", "ready_for_review"]'
