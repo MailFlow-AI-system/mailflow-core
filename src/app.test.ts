@@ -35,7 +35,7 @@ function createTestApp(
     checkDatabase: vi.fn().mockResolvedValue(undefined),
     auth,
     allowedAuthOrigins: ['http://localhost:4321', 'http://localhost:3000'],
-    mailRepository: { findMessages: vi.fn().mockResolvedValue([]) },
+    mailRepository: { findMessages: vi.fn().mockResolvedValue([]) } as never,
     ...dependencies,
   })
 }
@@ -50,7 +50,7 @@ describe('application', () => {
           handler: async () => new Response(null),
           api: { getSession: async () => ({ session: { id: 'session' }, user: { id: 'user' } }) },
         },
-        mailRepository: { findMessages },
+        mailRepository: { findMessages } as never,
         workspaces: {
           reader: {
             list: async () => ({ items: [], nextCursor: null }),
@@ -78,7 +78,7 @@ describe('application', () => {
           handler: async () => new Response(null),
           api: { getSession: async () => ({ session: { id: 'session' }, user: { id: 'user' } }) },
         },
-        mailRepository: { findMessages },
+        mailRepository: { findMessages } as never,
       },
     )
 

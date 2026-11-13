@@ -247,3 +247,29 @@ export const seedMailMessages: SeedMailMessage[] = content.map(
     receivedAt: new Date(Date.UTC(2026, 8, 30, 16, 0, -Math.floor(index / 3) * 3600)),
   }),
 )
+
+export type SeedMailState = {
+  folder: 'inbox' | 'archive' | 'trash' | 'spam'
+  read: boolean
+  starred: boolean
+}
+
+// Indexes into seedMailMessages (0 is the newest). The workspace owner is the actor and the
+// only member with read and star state; every other member sees the QA messages as unread.
+const archivedIndexes = new Set([4, 10, 17, 25])
+const trashedIndexes = new Set([6, 20, 28])
+const spamIndexes = new Set([8, 22, 31])
+const starredIndexes = new Set([0, 3, 10, 14])
+const unreadIndexes = new Set([0, 1, 2, 5, 8, 12, 15, 22])
+
+export const seedMailStates: SeedMailState[] = seedMailMessages.map((_, index) => ({
+  folder: archivedIndexes.has(index)
+    ? 'archive'
+    : trashedIndexes.has(index)
+      ? 'trash'
+      : spamIndexes.has(index)
+        ? 'spam'
+        : 'inbox',
+  read: !unreadIndexes.has(index),
+  starred: starredIndexes.has(index),
+}))

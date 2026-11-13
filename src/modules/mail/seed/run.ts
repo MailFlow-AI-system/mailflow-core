@@ -7,7 +7,7 @@ import { createAttachmentService } from '../attachments/service.js'
 import { createAttachmentRepository } from '../infrastructure/database/attachmentRepository.js'
 import { seedMailMessages } from './fixtures.js'
 import { createMailSeedAttachmentOperations, seedMailAttachments } from './seedAttachments.js'
-import { seedMail } from './seedMail.js'
+import { seedMail, seedMailStates } from './seedMail.js'
 import { parseMailSeedArgs, resolveMailSeedWorkspaceId } from './seedTarget.js'
 
 const target = parseMailSeedArgs(process.argv.slice(2), {
@@ -34,6 +34,7 @@ try {
     service: attachmentService,
   })
   const messagesInserted = await seedMail(database.pool, workspaceId)
+  const statesSeeded = await seedMailStates(database.pool, workspaceId, target.workspaceOwnerId)
   const attachmentsSeeded = await seedMailAttachments(
     attachmentOperations,
     workspaceId,
@@ -48,6 +49,8 @@ try {
       workspaceSlug: target.workspaceSlug,
       messagesInserted,
       messagesExisting: seedMailMessages.length - messagesInserted,
+      ownerStatesInserted: statesSeeded.states,
+      folderStatesApplied: statesSeeded.folders,
       attachmentsInserted: attachmentsSeeded.inserted,
       attachmentsExisting: attachmentsSeeded.existing,
     },
