@@ -92,6 +92,13 @@
       "when": 1794311424192,
       "tag": "0012_add_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794536970215,
+      "tag": "0013_add_message_actions",
+      "breakpoints": true
     }
   ]
 }
