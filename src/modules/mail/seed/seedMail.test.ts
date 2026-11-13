@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type SeedMailMessage, seedMailMessages } from './fixtures.js'
+import { type SeedMailMessage, seedMailMessages, seedMailStates } from './fixtures.js'
 import { mailSeedId } from './seedMail.js'
 
 describe('mail seed dataset', () => {
@@ -56,6 +56,20 @@ describe('mail seed dataset', () => {
     expect(detailedMessages.some((message) => message.to.length > 1)).toBe(true)
     expect(detailedMessages.some((message) => message.cc.length > 0)).toBe(true)
     expect(detailedMessages.some((message) => message.bcc.length > 0)).toBe(true)
+  })
+
+  it('gives every folder data, with unread and starred examples', () => {
+    expect(seedMailStates).toHaveLength(seedMailMessages.length)
+    const count = (predicate: (state: (typeof seedMailStates)[number]) => boolean) =>
+      seedMailStates.filter(predicate).length
+    for (const folder of ['archive', 'trash', 'spam'] as const)
+      expect(count((state) => state.folder === folder)).toBeGreaterThanOrEqual(3)
+    expect(count((state) => state.folder === 'inbox' && !state.read)).toBeGreaterThanOrEqual(3)
+    expect(count((state) => state.folder === 'inbox' && state.read)).toBeGreaterThanOrEqual(3)
+    expect(count((state) => state.folder === 'spam' && !state.read)).toBeGreaterThanOrEqual(1)
+    expect(count((state) => state.folder === 'inbox' && state.starred)).toBeGreaterThanOrEqual(2)
+    // Archived starred messages remain in the Starred view.
+    expect(count((state) => state.folder === 'archive' && state.starred)).toBeGreaterThanOrEqual(1)
   })
 
   it('includes a clickable URL in a plain-text message body', () => {
