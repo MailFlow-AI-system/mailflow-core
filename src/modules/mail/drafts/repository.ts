@@ -161,7 +161,7 @@ export function createDraftRepository(pool: MailPool) {
         // Literal, case-insensitive substring match; LIKE wildcards in the text are escaped.
         const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
         const rows = await client.query(
-          `select d.id,d.version,d.content->>'to' as "to",d.content->>'subject' as subject,
+          `select d.id,d.version,d.content->>'to' as "to",d.content->>'recipientName' as "recipientName",d.content->>'subject' as subject,
         left(d.content->>'text',240) as text,d.updated_at as "updatedAt",jsonb_array_length(d.content->'attachments') as "attachmentCount"
         from mail.draft d where d.workspace_id=$1 and d.user_id=$2 and d.state='active'
         and ($4 = '' or d.content->>'to' ilike $5 or d.content->>'cc' ilike $5
