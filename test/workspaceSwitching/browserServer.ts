@@ -298,8 +298,7 @@ app.post('/__fixture/control', async (context) => {
       'update mail.message set archived_at=null, archived_by=null, trashed_at=null, trashed_by=null, spam_at=null, spam_by=null where workspace_id=any($1::text[])',
       [workspaces],
     )
-  }
-  else if (action === 'fail-next') failNext = true
+  } else if (action === 'fail-next') failNext = true
   else if (action === 'fail-next-entry') failNextEntry = true
   else if (action === 'fail-next-budget') failNextBudget = true
   else if (action === 'expire-session')
