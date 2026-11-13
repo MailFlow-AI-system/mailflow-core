@@ -288,6 +288,17 @@ app.post('/__fixture/control', async (context) => {
       [fixture.userId, fixture.otherId],
     ])
   else if (action === 'reset-sent') await resetSent()
+  else if (action === 'reset-message-actions') {
+    const workspaces = [fixture.acme, fixture.northwind]
+    await fixture.admin.query(
+      'delete from mail.message_user_state where workspace_id=any($1::text[])',
+      [workspaces],
+    )
+    await fixture.admin.query(
+      'update mail.message set archived_at=null, archived_by=null, trashed_at=null, trashed_by=null, spam_at=null, spam_by=null where workspace_id=any($1::text[])',
+      [workspaces],
+    )
+  }
   else if (action === 'fail-next') failNext = true
   else if (action === 'fail-next-entry') failNextEntry = true
   else if (action === 'fail-next-budget') failNextBudget = true
