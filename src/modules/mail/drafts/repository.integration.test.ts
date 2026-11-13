@@ -191,7 +191,10 @@ describe('persisted drafts', () => {
         version: 0,
         mutationId: randomUUID(),
       })
-    const byRecipient = await put({ to: 'ada.lovelace@example.test' })
+    const byRecipient = await put({
+      to: 'ada.lovelace@example.test',
+      recipientName: 'Countess Byron',
+    })
     const byCc = await put({ cc: 'grace@navy.test' })
     const bySubject = await put({ subject: 'Invoice 100%_final' })
     const byBody = await put({ text: 'Please review the ATTACHED contract' })
@@ -203,6 +206,11 @@ describe('persisted drafts', () => {
     const ids = async (search: string) =>
       (await repository.list(scope, 0, search)).map((item) => item.id).sort()
     expect(await ids('')).toHaveLength(5)
+    // The list carries the recipient name so clients can show it instead of the address.
+    expect(
+      (await repository.list(scope, 0)).find((item) => item.id === byRecipient.id),
+    ).toMatchObject({ to: 'ada.lovelace@example.test', recipientName: 'Countess Byron' })
+    expect(await ids('byron')).toEqual([byRecipient.id])
     expect(await ids('LOVELACE')).toEqual([byRecipient.id])
     expect(await ids('navy.test')).toEqual([byCc.id])
     expect(await ids('invoice')).toEqual([bySubject.id])
