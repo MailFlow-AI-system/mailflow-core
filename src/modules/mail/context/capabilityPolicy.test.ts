@@ -39,6 +39,12 @@ describe('mail capability policy', () => {
     ['POST', '/api/v1/workspaces/acme/mail/labels', 'mail.compose'],
     ['PUT', '/api/v1/workspaces/acme/mail/messages/m1/labels/l1', 'mail.compose'],
     ['DELETE', '/api/v1/workspaces/acme/mail/sent/m1/labels/l1', 'mail.compose'],
+    ['GET', '/api/v1/workspaces/acme/mail/unread-counts', 'mail.read'],
+    // Read and star are per-user state. The handlers additionally require mail.compose for
+    // archive, trash and spam changes.
+    ['PATCH', '/api/v1/workspaces/acme/mail/messages/m1', 'mail.read'],
+    ['POST', '/api/v1/workspaces/acme/mail/messages/actions', 'mail.read'],
+    ['DELETE', '/api/v1/workspaces/acme/mail/messages/m1', 'mail.compose'],
   ] as const)('maps %s %s to %s', (method, path, capability) => {
     expect(findMailCapabilityRule(method, path)?.capability).toBe(capability)
   })
@@ -52,6 +58,11 @@ describe('mail capability policy', () => {
     ['GET', '/api/v1/workspaces/acme/mail/unknown'],
     ['GET', '/api/v1/mail/attachments/att-1/complete'],
     ['GET', '/api/v1/mail/sent/a/b'],
+    ['PATCH', '/api/v1/workspaces/acme/mail/messages'],
+    ['PATCH', '/api/v1/workspaces/acme/mail/messages/m1/labels/l1'],
+    ['DELETE', '/api/v1/workspaces/acme/mail/messages'],
+    ['POST', '/api/v1/workspaces/acme/mail/messages/m1'],
+    ['GET', '/api/v1/workspaces/acme/mail/messages/m1/extra'],
   ])('has no rule for %s %s', (method, path) => {
     expect(findMailCapabilityRule(method, path)).toBeUndefined()
   })

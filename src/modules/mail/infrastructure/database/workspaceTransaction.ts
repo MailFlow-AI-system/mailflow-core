@@ -27,3 +27,17 @@ export async function inWorkspaceTransaction<T>(
     client.release(releaseError)
   }
 }
+
+/** Also scopes per-user tables, whose RLS policies require `mailflow.user_id`. */
+export function inUserWorkspaceTransaction<T>(
+  pool: MailPool,
+  workspaceId: string,
+  userId: string,
+  operation: (client: MailClient) => Promise<T>,
+) {
+  if (!userId) throw new Error('An authenticated identity is required')
+  return inWorkspaceTransaction(pool, workspaceId, async (client) => {
+    await client.query("select set_config('mailflow.user_id', $1, true)", [userId])
+    return operation(client)
+  })
+}
