@@ -5,6 +5,7 @@ import type {
   ListMessagesResponse,
   MailMessageRepository,
   MessageCursor,
+  MessageScope,
 } from './types.js'
 
 export const INBOX_PAGE_SIZE = 8
@@ -40,13 +41,14 @@ function decodeCursor(value: string): MessageCursor {
 }
 
 export async function listMessages(
-  repository: MailMessageRepository,
-  workspaceId: string,
+  repository: Pick<MailMessageRepository, 'findMessages'>,
+  scope: MessageScope,
   query: ListMessagesQuery,
 ): Promise<ListMessagesResponse> {
   const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor)
   const messages = await repository.findMessages({
-    workspaceId,
+    ...scope,
+    folder: query.folder ?? 'inbox',
     search: query.q?.trim() ?? '',
     cursor,
   })

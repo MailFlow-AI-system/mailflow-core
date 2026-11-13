@@ -101,6 +101,7 @@ export function createApp({
       createMailModule({
         repository: mailRepository,
         resolveWorkspace: (userId, slug) => workspaces.reader.context(userId, slug),
+        isAllowedOrigin: isAllowedAuthOrigin ?? ((origin) => allowedAuthOrigins.includes(origin)),
       }),
     )
   if (outgoingMail)
