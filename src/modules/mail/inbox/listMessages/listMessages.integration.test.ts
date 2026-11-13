@@ -13,8 +13,8 @@ import { assertMailDatabaseRole } from '../../infrastructure/database/databaseRo
 import { createMailMessageRepository } from '../../infrastructure/database/mailMessageRepository.js'
 import { messages } from '../../infrastructure/database/schema/messages.js'
 import { inWorkspaceTransaction } from '../../infrastructure/database/workspaceTransaction.js'
-import { seedMailMessages } from '../../seed/fixtures.js'
-import { mailSeedId, seedMail } from '../../seed/seedMail.js'
+import { seedMailMessages, seedMailStates as seedMailStateFixtures } from '../../seed/fixtures.js'
+import { mailSeedId, seedMail, seedMailStates } from '../../seed/seedMail.js'
 import type { ListMessagesResponse, MailMessage } from './types.js'
 
 const databaseUrl =
@@ -113,7 +113,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       migrationsTable: '__drizzle_migrations',
     })
     await owner.query(`GRANT USAGE ON SCHEMA mail TO "${role}";
-      GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message TO "${role}";
+      GRANT SELECT, INSERT, UPDATE, DELETE ON mail.message, mail.message_user_state TO "${role}";
       GRANT SELECT ON mail.attachment, mail.inbox_message_attachment, mail.label, mail.message_label TO "${role}"`)
     ownerUrl.username = role
     ownerUrl.password = 'mail_test_local_only'
@@ -352,9 +352,18 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       drizzle(client).select().from(messages),
     )
     expect(stored).toHaveLength(fixtures.length + seedMailMessages.length)
+    const noFolderState = {
+      archivedAt: null,
+      archivedBy: null,
+      trashedAt: null,
+      trashedBy: null,
+      spamAt: null,
+      spamBy: null,
+    }
     for (const original of fixtures) {
       expect(stored.find((message) => message.id === original.id)).toEqual({
         ...original,
+        ...noFolderState,
         workspaceId: 'workspace-a',
         senderEmail: null,
         to: [],
@@ -367,6 +376,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       expect(stored.find((message) => message.id === mailSeedId('workspace-a', seeded.id))).toEqual(
         {
           ...seeded,
+          ...noFolderState,
           workspaceId: 'workspace-a',
           id: mailSeedId('workspace-a', seeded.id),
         },
@@ -374,16 +384,79 @@ describe('Workspace Inbox PostgreSQL integration', () => {
     }
   })
 
+  it('seeds folder and per-user state once, without overriding later changes or other rows', async () => {
+    await seedMail(pool, 'workspace-a')
+    // A QA message the owner already moved before the state seed ran keeps its folder.
+    const touched = mailSeedId('workspace-a', seedMailMessages[4]?.id ?? '')
+    await owner.query(
+      "UPDATE mail.message SET spam_at = now(), spam_by = 'someone' WHERE id = $1",
+      [touched],
+    )
+    expect(await seedMailStates(pool, 'workspace-a', 'owner-1')).toEqual({
+      states: seedMailMessages.length,
+      folders: seedMailStateFixtures.filter((state) => state.folder !== 'inbox').length - 1,
+    })
+    const repository = createMailMessageRepository(pool)
+    const all = async (folder: 'inbox' | 'starred' | 'archive' | 'trash' | 'spam') => {
+      const items: string[] = []
+      let cursor: { id: string; receivedAt: Date } | null = null
+      for (;;) {
+        const page = await repository.findMessages({
+          workspaceId: 'workspace-a',
+          userId: 'owner-1',
+          folder,
+          search: '[MailFlow QA]',
+          cursor,
+        })
+        items.push(...page.slice(0, 8).map(({ id }) => id))
+        const last = page[7]
+        if (page.length <= 8 || !last) return items
+        cursor = { id: last.id, receivedAt: last.receivedAt }
+      }
+    }
+    for (const folder of ['archive', 'trash', 'spam', 'starred'] as const)
+      expect((await all(folder)).length).toBeGreaterThan(0)
+    const archived = await owner.query(
+      "SELECT archived_by FROM mail.message WHERE archived_at IS NOT NULL AND workspace_id = 'workspace-a'",
+    )
+    expect(archived.rows.every((row) => row.archived_by === 'owner-1')).toBe(true)
+    expect(
+      (await owner.query('SELECT spam_by FROM mail.message WHERE id = $1', [touched])).rows,
+    ).toEqual([{ spam_by: 'someone' }])
+    // Non-seed messages and other members are untouched.
+    expect(
+      (
+        await owner.query(
+          'SELECT 1 FROM mail.message WHERE id = ANY($1::uuid[]) AND (archived_at IS NOT NULL OR trashed_at IS NOT NULL OR spam_at IS NOT NULL)',
+          [fixtures.map(({ id }) => id)],
+        )
+      ).rowCount,
+    ).toBe(0)
+    expect(
+      (await owner.query('SELECT DISTINCT user_id FROM mail.message_user_state')).rows,
+    ).toEqual([{ user_id: 'owner-1' }])
+
+    // Restoring a seeded message survives a rerun.
+    const trashed = (await all('trash'))[0] ?? ''
+    await repository.updateMessage('workspace-a', 'owner-1', trashed, { trashed: false })
+    expect(await seedMailStates(pool, 'workspace-a', 'owner-1')).toEqual({ states: 0, folders: 0 })
+    expect(await all('trash')).not.toContain(trashed)
+  })
+
   it('isolates A and B with RLS even when the explicit workspace predicate is omitted', async () => {
     await seedMail(pool, 'workspace-b')
     const repository = createMailMessageRepository(pool)
     const a = await repository.findMessages({
       workspaceId: 'workspace-a',
+      userId: 'user',
+      folder: 'inbox',
       search: '',
       cursor: null,
     })
     const b = await repository.findMessages({
       workspaceId: 'workspace-b',
+      userId: 'user',
+      folder: 'inbox',
       search: '',
       cursor: null,
     })

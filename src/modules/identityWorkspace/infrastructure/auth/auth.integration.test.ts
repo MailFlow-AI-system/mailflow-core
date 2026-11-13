@@ -52,7 +52,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
     checkDatabase: database.check,
     auth,
     allowedAuthOrigins: authConfig.allowedOrigins,
-    mailRepository: { findMessages: async () => [] },
+    mailRepository: { findMessages: async () => [] } as never,
   })
 
   app.get('/api/v1/private', (context) => context.json({ protected: true }))
