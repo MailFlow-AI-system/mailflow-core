@@ -1,4 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi'
+import { mailFolders } from '../messageActions/contract.js'
+
+const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string() })
 
 const messageSchema = z.object({
   id: z.uuid(),
@@ -6,6 +9,16 @@ const messageSchema = z.object({
   subject: z.string(),
   body: z.string(),
   receivedAt: z.iso.datetime(),
+  labels: z.array(labelSchema).optional(),
+  isRead: z.boolean().openapi({ description: 'Read by the current user.' }),
+  isStarred: z.boolean().openapi({ description: 'Starred by the current user.' }),
+  folder: z.enum(['inbox', 'archive', 'trash', 'spam']),
+  archivedAt: z.iso.datetime().nullable(),
+  archivedBy: z.string().nullable().openapi({ description: 'User id of the actor.' }),
+  trashedAt: z.iso.datetime().nullable(),
+  trashedBy: z.string().nullable(),
+  spamAt: z.iso.datetime().nullable(),
+  spamBy: z.string().nullable(),
 })
 
 const problemSchema = z.object({
@@ -38,6 +51,10 @@ export const listMessagesRoute = createRoute({
         .optional()
         .openapi({ description: 'Optional search text, trimmed by the API.' }),
       cursor: z.string().optional().openapi({ description: 'Opaque next-page cursor.' }),
+      folder: z
+        .enum(mailFolders)
+        .optional()
+        .openapi({ description: 'Folder to list; defaults to inbox.' }),
     }),
   },
   responses: {
@@ -52,7 +69,7 @@ export const listMessagesRoute = createRoute({
       },
     },
     400: {
-      description: 'The message cursor is invalid.',
+      description: 'The message cursor or folder is invalid.',
       content: { 'application/problem+json': { schema: problemSchema } },
     },
     401: {

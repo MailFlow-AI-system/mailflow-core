@@ -10,6 +10,9 @@ function createTestApp(authenticated = true) {
   const repository = {
     findMessages: vi.fn().mockResolvedValue([]),
     findMessage: vi.fn().mockResolvedValue(null),
+    countUnread: vi.fn(),
+    updateMessage: vi.fn().mockResolvedValue(null),
+    applyAction: vi.fn(),
   } satisfies MailMessageRepository
   const auth: AuthService = {
     handler: async () => new Response(),
@@ -82,6 +85,8 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
     })
     expect(repository.findMessages).toHaveBeenCalledWith({
       workspaceId: 'workspace-a',
+      userId: 'user',
+      folder: 'inbox',
       search: 'invoice',
       cursor: null,
     })
@@ -155,6 +160,8 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
     expect(response.headers.get('X-Workspace-Identity')).toBe('user')
     expect(repository.findMessages).toHaveBeenCalledWith({
       workspaceId: 'workspace-a',
+      userId: 'user',
+      folder: 'inbox',
       search: '',
       cursor: null,
     })
@@ -227,6 +234,7 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
       'slug',
       'q',
       'cursor',
+      'folder',
     ])
     expect(operation.responses).toHaveProperty('200')
     expect(operation.responses).toHaveProperty('400')
