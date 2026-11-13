@@ -67,6 +67,9 @@ stored file access also require their authenticated owner. Details include HTML,
 plain text, available sender metadata, recipients, timestamp, and clean attachment metadata.
 Unknown historical sender addresses remain null.
 
+Folders, read/star state and quick actions (archive, trash, spam, permanent delete) are described
+in [message actions](docs/message-actions-api.md); they require Mail migration 0013.
+
 Apply Mail migrations through 0010 before starting the reader. The existing runtime role
 needs SELECT, INSERT, UPDATE, and DELETE privileges on `mail.inbox_message_attachment`,
 as with the other Mail tables; migrations do not provision or change runtime roles.
