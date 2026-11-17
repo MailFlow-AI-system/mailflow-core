@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { type MailListSort, mailListOrder } from '../../shared/listSort.js'
+import { hasNoNul } from '../../shared/searchText.js'
 import type {
   InboxMessage,
   ListMessagesQuery,
@@ -27,10 +28,7 @@ const cursorSchema = z.union([
   z.strictObject({ sort: z.enum(['newest', 'oldest']), receivedAt, id }),
   z.strictObject({
     sort: z.enum(['sender-asc', 'sender-desc', 'subject-asc', 'subject-desc']),
-    // Stored text never contains NUL, which PostgreSQL rejects as a query parameter.
-    key: z
-      .string()
-      .refine((key) => [...key].length <= MESSAGE_SORT_KEY_LENGTH && !key.includes('\u0000')),
+    key: z.string().refine((key) => [...key].length <= MESSAGE_SORT_KEY_LENGTH && hasNoNul(key)),
     id,
   }),
 ])

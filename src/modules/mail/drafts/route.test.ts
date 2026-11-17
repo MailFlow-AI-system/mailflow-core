@@ -151,6 +151,13 @@ describe('draft routes', () => {
     }
     expect(repository.list).not.toHaveBeenCalled()
   })
+  it('rejects a draft search containing NUL before reaching the repository', async () => {
+    const { app, repository } = setup()
+    const response = await app.request('/api/v1/mail/drafts?q=in%00voice')
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ code: 'invalid_draft_query' })
+    expect(repository.list).not.toHaveBeenCalled()
+  })
   it('discards several drafts and reports each outcome without hiding conflicts', async () => {
     const { app, repository } = setup()
     const items = [

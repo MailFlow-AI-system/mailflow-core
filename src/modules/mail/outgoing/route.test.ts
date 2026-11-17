@@ -176,6 +176,11 @@ describe('outgoing mail HTTP', () => {
       expect((await app.request(`/api/v1/mail/sent?sort=${sort}`)).status).toBe(400)
     expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
   })
+  it('rejects a Sent search containing NUL before reaching the repository', async () => {
+    const { app, outgoingMail } = setup()
+    expect((await app.request('/api/v1/mail/sent?q=in%00voice')).status).toBe(400)
+    expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
+  })
   it('forwards a trimmed search text to Sent and rejects oversized searches', async () => {
     const { app, outgoingMail } = setup()
     expect((await app.request('/api/v1/mail/sent?q=%20invoice%20')).status).toBe(200)
