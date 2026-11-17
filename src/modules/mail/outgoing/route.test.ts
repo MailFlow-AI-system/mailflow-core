@@ -156,8 +156,25 @@ describe('outgoing mail HTTP', () => {
       { userId: 'owner', workspaceId: 'workspace-a' },
       20,
       '',
+      'newest',
     )
     expect((await app.request('/api/v1/mail/sent?offset=-1')).status).toBe(400)
+  })
+  it('forwards the Sent sort and rejects unknown sorts', async () => {
+    const { app, outgoingMail } = setup()
+    for (const sort of ['oldest', 'sender-asc', 'sender-desc', 'subject-asc', 'subject-desc']) {
+      expect((await app.request(`/api/v1/mail/sent?sort=${sort}&offset=20`)).status).toBe(200)
+      expect(outgoingMail.repository.listSent).toHaveBeenLastCalledWith(
+        { userId: 'owner', workspaceId: 'workspace-a' },
+        20,
+        '',
+        sort,
+      )
+    }
+    outgoingMail.repository.listSent.mockClear()
+    for (const sort of ['unknown', 'NEWEST', ''])
+      expect((await app.request(`/api/v1/mail/sent?sort=${sort}`)).status).toBe(400)
+    expect(outgoingMail.repository.listSent).not.toHaveBeenCalled()
   })
   it('forwards a trimmed search text to Sent and rejects oversized searches', async () => {
     const { app, outgoingMail } = setup()
@@ -166,6 +183,7 @@ describe('outgoing mail HTTP', () => {
       { userId: 'owner', workspaceId: 'workspace-a' },
       0,
       'invoice',
+      'newest',
     )
     expect((await app.request(`/api/v1/mail/sent?q=${'a'.repeat(201)}`)).status).toBe(400)
   })
@@ -310,6 +328,7 @@ describe('workspace-scoped Sent HTTP', () => {
       { userId: 'owner', workspaceId: 'workspace-a' },
       0,
       '',
+      'newest',
     )
   })
   it('uses the selected workspace rather than the account default for Sent', async () => {
@@ -333,6 +352,7 @@ describe('workspace-scoped Sent HTTP', () => {
       { userId: 'owner', workspaceId: 'workspace-b' },
       5,
       '',
+      'newest',
     )
     expect(response.headers.get('X-Workspace-Id')).toBe('workspace-b')
   })

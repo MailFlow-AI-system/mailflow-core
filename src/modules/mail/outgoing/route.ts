@@ -160,8 +160,13 @@ export function createOutgoingMailModule(
     })
   })
   app.openapi(sentEmailsRoute, async (context) => {
-    const { offset, q } = context.req.valid('query')
-    const messages = await dependencies.repository.listSent(context.get('mailContext'), offset, q)
+    const { offset, q, sort } = context.req.valid('query')
+    const messages = await dependencies.repository.listSent(
+      context.get('mailContext'),
+      offset,
+      q,
+      sort,
+    )
     return context.json(
       {
         items: messages

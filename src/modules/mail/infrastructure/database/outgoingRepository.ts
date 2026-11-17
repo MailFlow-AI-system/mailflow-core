@@ -12,6 +12,7 @@ import {
   isNull,
   lt,
   or,
+  type SQL,
   type SQLWrapper,
   sql,
 } from 'drizzle-orm'
@@ -22,10 +23,18 @@ import {
   type OutgoingRepository,
   type SentAttachment,
 } from '../../outgoing/types.js'
+import { type MailListOrder, mailListOrder } from '../../shared/listSort.js'
 import { readMessageLabels } from './readMessageLabels.js'
 import { attachments, outgoingEmailAttachments } from './schema/attachments.js'
 import { draftAttachments } from './schema/drafts.js'
 import { outgoingEmails } from './schema/outgoingEmails.js'
+
+// Sent shows the recipient, so the "sender" sorts use that displayed correspondent.
+const sentSortKeys: Record<MailListOrder['field'], SQL> = {
+  date: sql`${outgoingEmails.sentAt}`,
+  sender: sql`lower(coalesce(nullif(trim(${outgoingEmails.recipientName}), ''), ${outgoingEmails.to}->>0, ''))`,
+  subject: sql`lower(${outgoingEmails.subject})`,
+}
 
 export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepository {
   const sentSelection = {
@@ -405,8 +414,10 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
           ),
         )
     },
-    listSent: async (context, offset, search = '') => {
+    listSent: async (context, offset, search = '', sort = 'newest') => {
       assertMailContext(context)
+      const { field, direction } = mailListOrder(sort)
+      const by = direction === 'desc' ? desc : asc
       // Literal, case-insensitive substring match; LIKE wildcards in the text are escaped.
       const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
       const addressMatches = (column: SQLWrapper) =>
@@ -443,7 +454,7 @@ export function createOutgoingRepository(database: NodePgDatabase): OutgoingRepo
                 : undefined,
             ),
           )
-          .orderBy(desc(outgoingEmails.sentAt), desc(outgoingEmails.id))
+          .orderBy(by(sentSortKeys[field]), by(outgoingEmails.id))
           .limit(21)
           .offset(offset)
       })
