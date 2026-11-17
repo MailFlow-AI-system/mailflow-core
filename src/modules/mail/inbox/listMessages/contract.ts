@@ -1,5 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi'
 import { mailListSortSchema } from '../../shared/listSort.js'
+import { hasNoNul } from '../../shared/searchText.js'
 import { mailFolders } from '../messageActions/contract.js'
 
 const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string() })
@@ -49,6 +50,7 @@ export const listMessagesRoute = createRoute({
     query: z.object({
       q: z
         .string()
+        .refine(hasNoNul)
         .optional()
         .openapi({ description: 'Optional search text, trimmed by the API.' }),
       cursor: z.string().optional().openapi({ description: 'Opaque next-page cursor.' }),
