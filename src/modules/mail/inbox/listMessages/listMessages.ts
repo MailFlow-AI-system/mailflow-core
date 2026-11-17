@@ -27,7 +27,10 @@ const cursorSchema = z.union([
   z.strictObject({ sort: z.enum(['newest', 'oldest']), receivedAt, id }),
   z.strictObject({
     sort: z.enum(['sender-asc', 'sender-desc', 'subject-asc', 'subject-desc']),
-    key: z.string().refine((key) => [...key].length <= MESSAGE_SORT_KEY_LENGTH),
+    // Stored text never contains NUL, which PostgreSQL rejects as a query parameter.
+    key: z
+      .string()
+      .refine((key) => [...key].length <= MESSAGE_SORT_KEY_LENGTH && !key.includes('\u0000')),
     id,
   }),
 ])
