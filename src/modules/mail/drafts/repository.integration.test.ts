@@ -223,6 +223,64 @@ describe('persisted drafts', () => {
     expect(foreign.id).toBeDefined()
   })
 
+  it('orders drafts by update time, displayed recipient and subject with an id tie-break across pages', async () => {
+    const sorter = { userId: 'sorter', workspaceId: 'workspace' }
+    const recipients = [
+      { recipientName: 'Beta', to: 'zulu@example.test' },
+      { recipientName: ' ', to: 'alpha@example.test' },
+      { recipientName: 'alpha@example.test', to: '' },
+      { recipientName: '', to: '' },
+    ]
+    const subjects = ['Eta', 'zeta', 'ETA', '', 'Zeta']
+    const drafts = Array.from({ length: 23 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(((index * 5) % 23) + 1).padStart(12, '0')}`,
+      ...(recipients[index % recipients.length] as (typeof recipients)[number]),
+      subject: subjects[index % subjects.length] ?? '',
+      updatedAt: new Date(1_700_000_000_000 + Math.floor(index / 3) * 1000),
+    }))
+    for (const { id, updatedAt, ...fields } of drafts)
+      await owner.query(
+        `insert into mail.draft (workspace_id,user_id,id,content,updated_at) values ($1,$2,$3,$4,$5)`,
+        [
+          sorter.workspaceId,
+          sorter.userId,
+          id,
+          JSON.stringify({ ...content, ...fields }),
+          updatedAt,
+        ],
+      )
+    // One legacy row without a subject key must sort like an empty subject.
+    const legacy = drafts[3]
+    await owner.query(
+      `update mail.draft set content=content-'subject' where workspace_id=$1 and user_id=$2 and id=$3`,
+      [sorter.workspaceId, sorter.userId, legacy?.id],
+    )
+    const recipient = (draft: (typeof drafts)[number]) =>
+      (draft.recipientName.trim() || draft.to).toLowerCase()
+    const keyOf = {
+      newest: (draft: (typeof drafts)[number]) => draft.updatedAt.getTime(),
+      oldest: (draft: (typeof drafts)[number]) => draft.updatedAt.getTime(),
+      'sender-asc': recipient,
+      'sender-desc': recipient,
+      'subject-asc': (draft: (typeof drafts)[number]) => draft.subject.toLowerCase(),
+      'subject-desc': (draft: (typeof drafts)[number]) => draft.subject.toLowerCase(),
+    } as const
+    const compare = (left: string | number, right: string | number) =>
+      left < right ? -1 : left > right ? 1 : 0
+    for (const sort of Object.keys(keyOf) as (keyof typeof keyOf)[]) {
+      const sign = sort === 'newest' || sort.endsWith('-desc') ? -1 : 1
+      const expected = [...drafts]
+        .sort(
+          (left, right) =>
+            sign * (compare(keyOf[sort](left), keyOf[sort](right)) || compare(left.id, right.id)),
+        )
+        .map(({ id }) => id)
+      const first = await repository.list(sorter, 0, '', sort)
+      const second = await repository.list(sorter, 20, '', sort)
+      expect(first).toHaveLength(21)
+      expect([...first.slice(0, 20), ...second].map(({ id }) => id)).toEqual(expected)
+    }
+  })
   it('discards several drafts, reporting a stale version without stopping the rest', async () => {
     const first = randomUUID()
     const second = randomUUID()

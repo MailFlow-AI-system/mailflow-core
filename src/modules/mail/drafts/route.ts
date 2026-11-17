@@ -1,6 +1,7 @@
 import { OpenAPIHono, z } from '@hono/zod-openapi'
 import { bodyLimit } from 'hono/body-limit'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
+import { mailListSortSchema } from '../shared/listSort.js'
 import {
   DraftConflictError,
   DraftReferenceError,
@@ -38,8 +39,10 @@ export function createDraftRoutes(
       .max(1_000_000)
       .safeParse(c.req.query('offset') ?? 0)
     const search = searchTextSchema.safeParse(c.req.query('q') ?? '')
-    if (!offset.success || !search.success) return c.json({ code: 'invalid_draft_query' }, 400)
-    const items = await repository.list(c.get('mailContext'), offset.data, search.data)
+    const sort = mailListSortSchema.safeParse(c.req.query('sort'))
+    if (!offset.success || !search.success || !sort.success)
+      return c.json({ code: 'invalid_draft_query' }, 400)
+    const items = await repository.list(c.get('mailContext'), offset.data, search.data, sort.data)
     return c.json({
       items: items.slice(0, 20),
       nextOffset: items.length > 20 ? offset.data + 20 : null,

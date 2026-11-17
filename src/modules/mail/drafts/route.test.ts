@@ -121,14 +121,35 @@ describe('draft routes', () => {
       { userId: 'owner', workspaceId: 'workspace' },
       20,
       'invoice',
+      'newest',
     )
     expect((await app.request('/api/v1/mail/drafts')).status).toBe(200)
     expect(repository.list).toHaveBeenLastCalledWith(
       { userId: 'owner', workspaceId: 'workspace' },
       0,
       '',
+      'newest',
     )
     expect((await app.request(`/api/v1/mail/drafts?q=${'a'.repeat(201)}`)).status).toBe(400)
+  })
+  it('forwards the draft sort and rejects unknown sorts', async () => {
+    const { app, repository } = setup()
+    for (const sort of ['oldest', 'sender-asc', 'sender-desc', 'subject-asc', 'subject-desc']) {
+      expect((await app.request(`/api/v1/mail/drafts?sort=${sort}&offset=20`)).status).toBe(200)
+      expect(repository.list).toHaveBeenLastCalledWith(
+        { userId: 'owner', workspaceId: 'workspace' },
+        20,
+        '',
+        sort,
+      )
+    }
+    repository.list.mockClear()
+    for (const sort of ['unknown', 'NEWEST', '']) {
+      const response = await app.request(`/api/v1/mail/drafts?sort=${sort}`)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ code: 'invalid_draft_query' })
+    }
+    expect(repository.list).not.toHaveBeenCalled()
   })
   it('discards several drafts and reports each outcome without hiding conflicts', async () => {
     const { app, repository } = setup()

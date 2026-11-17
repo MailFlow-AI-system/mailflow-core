@@ -250,6 +250,56 @@ integration('outgoing mail PostgreSQL persistence', () => {
     expect(page.map(({ id }) => id)).toEqual(all.slice(5).map(({ id }) => id))
     expect(await repository.listSent(context(owner, 'workspace-b'), 0)).toHaveLength(11)
   })
+  it('orders Sent by date, displayed correspondent and subject with an id tie-break across pages', async () => {
+    const dependencies = { repository, deliver: async () => 'provider' }
+    // Recipient names fall back to the first To address, so "alpha" ties a named and an unnamed send.
+    const correspondents = [
+      { recipientName: 'Beta', to: ['zulu@example.test'] },
+      { recipientName: '  ', to: ['alpha@example.test'] },
+      { recipientName: 'alpha@example.test', to: ['yankee@example.test'] },
+      { recipientName: 'Gamma', to: ['xray@example.test'] },
+    ]
+    const subjects = ['Eta', 'zeta', 'ETA', 'theta', 'Zeta']
+    const sent = Array.from({ length: 23 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(((index * 5) % 23) + 1).padStart(12, '0')}`,
+      ...(correspondents[index % correspondents.length] as (typeof correspondents)[number]),
+      subject: subjects[index % subjects.length] ?? '',
+      sentAt: new Date(1_700_000_000_000 + Math.floor(index / 3) * 1000),
+    }))
+    for (const { sentAt, ...message } of sent) {
+      await sendEmail(dependencies, context(), { ...input, ...message, bcc: [] })
+      await client.query('UPDATE mail.outgoing_email SET sent_at=$1 WHERE user_id=$2 AND id=$3', [
+        sentAt,
+        owner,
+        message.id,
+      ])
+    }
+    const correspondent = (message: (typeof sent)[number]) =>
+      (message.recipientName.trim() || message.to[0] || '').toLowerCase()
+    const keyOf = {
+      newest: (message: (typeof sent)[number]) => message.sentAt.getTime(),
+      oldest: (message: (typeof sent)[number]) => message.sentAt.getTime(),
+      'sender-asc': correspondent,
+      'sender-desc': correspondent,
+      'subject-asc': (message: (typeof sent)[number]) => message.subject.toLowerCase(),
+      'subject-desc': (message: (typeof sent)[number]) => message.subject.toLowerCase(),
+    } as const
+    const compare = (left: string | number, right: string | number) =>
+      left < right ? -1 : left > right ? 1 : 0
+    for (const sort of Object.keys(keyOf) as (keyof typeof keyOf)[]) {
+      const sign = sort === 'newest' || sort.endsWith('-desc') ? -1 : 1
+      const expected = [...sent]
+        .sort(
+          (left, right) =>
+            sign * (compare(keyOf[sort](left), keyOf[sort](right)) || compare(left.id, right.id)),
+        )
+        .map(({ id }) => id)
+      const first = await repository.listSent(context(), 0, '', sort)
+      const second = await repository.listSent(context(), 20, '', sort)
+      expect(first).toHaveLength(21)
+      expect([...first.slice(0, 20), ...second].map(({ id }) => id)).toEqual(expected)
+    }
+  })
   it('reserves atomically, preserves the original content and rejects conflicting retries', async () => {
     await repository.reserve({ ...input, userId: owner, payloadHash: 'original' })
     const reserved = await repository.reserve({
