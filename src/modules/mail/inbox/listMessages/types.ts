@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg'
 import type { Label } from '../../labels/types.js'
+import type { MailListSort } from '../../shared/listSort.js'
 import type {
   MailFolder,
   MessageAction,
@@ -45,7 +46,8 @@ export type InboxMessage = MailMessage & MessageState
 export type MessageStateView = { id: string } & MessageState
 export type UnreadCounts = Record<MailFolder, number>
 
-export type MessageCursor = Pick<MailMessage, 'id' | 'receivedAt'>
+/** Resume point after the last returned message: its date for date sorts, its text key otherwise. */
+export type MessageCursor = Pick<MailMessage, 'id' | 'receivedAt'> | { id: string; key: string }
 
 export type MessageDetail = {
   id: string
@@ -77,6 +79,7 @@ export type MailMessageRepository = {
     input: MessageScope & {
       folder: MailFolder
       search: string
+      sort: MailListSort
       cursor: MessageCursor | null
     },
   ) => Promise<InboxMessage[]>
@@ -101,6 +104,7 @@ export type ListMessagesQuery = {
   q?: string | undefined
   cursor?: string | undefined
   folder?: MailFolder | undefined
+  sort?: MailListSort | undefined
 }
 
 export type ListMessagesResponse = {

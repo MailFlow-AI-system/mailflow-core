@@ -1,12 +1,14 @@
-import { and, eq, exists, ilike, or, sql } from 'drizzle-orm'
+import { and, eq, exists, ilike, or, type SQL, type SQLWrapper, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-postgres'
 
-import { INBOX_PAGE_SIZE } from '../../inbox/listMessages/listMessages.js'
+import { INBOX_PAGE_SIZE, MESSAGE_SORT_KEY_LENGTH } from '../../inbox/listMessages/listMessages.js'
 import type {
   MailMessageRepository,
   MailPool,
+  MessageCursor,
   UnreadCounts,
 } from '../../inbox/listMessages/types.js'
+import { type MailListSort, mailListOrder } from '../../shared/listSort.js'
 import {
   applyAction,
   applyPatch,
@@ -21,6 +23,28 @@ import { attachments, inboxMessageAttachments } from './schema/attachments.js'
 import { labels, messageLabels } from './schema/labels.js'
 import { messages, messageUserStates } from './schema/messages.js'
 import { inUserWorkspaceTransaction } from './workspaceTransaction.js'
+
+// Fixed SQL for each sort; only the cursor values below are bound parameters.
+const keyLength = sql.raw(String(MESSAGE_SORT_KEY_LENGTH))
+const textSortKey = (value: SQLWrapper) => sql`lower(left(${value}, ${keyLength}))`
+const textSortColumns = { sender: messages.senderName, subject: messages.subject } as const
+
+function messageOrder(sort: MailListSort, cursor: MessageCursor | null) {
+  const { field, direction } = mailListOrder(sort)
+  const key = field === 'date' ? sql`${messages.receivedAt}` : textSortKey(textSortColumns[field])
+  const keyset = sql`(${key}, ${messages.id})`
+  const comparison = sql.raw(direction === 'desc' ? '<' : '>')
+  let after: SQL | undefined
+  if (cursor && 'key' in cursor) {
+    if (field === 'date') throw new TypeError('A text cursor cannot resume a date sort')
+    after = sql`${keyset} ${comparison} (${textSortKey(sql`${cursor.key}::text`)}, ${cursor.id}::uuid)`
+  } else if (cursor) {
+    if (field !== 'date') throw new TypeError('A date cursor cannot resume a text sort')
+    after = sql`${keyset} ${comparison} (${cursor.receivedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
+  }
+  const order = sql.raw(direction === 'desc' ? 'desc nulls last' : 'asc nulls last')
+  return { after, orderBy: [sql`${key} ${order}`, sql`${messages.id} ${order}`] }
+}
 
 export function createMailMessageRepository(pool: MailPool): MailMessageRepository {
   return {
@@ -81,8 +105,9 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
           ...messageState,
         }
       }),
-    findMessages: ({ workspaceId, userId, folder, search, cursor }) =>
+    findMessages: ({ workspaceId, userId, folder, search, sort, cursor }) =>
       inUserWorkspaceTransaction(pool, workspaceId, userId, async (client) => {
+        const order = messageOrder(sort, cursor)
         const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
 
         const db = drizzle({ client })
@@ -140,12 +165,10 @@ export function createMailMessageRepository(pool: MailPool): MailMessageReposito
                     exists(matchingLabel),
                   )
                 : undefined,
-              cursor
-                ? sql`(${messages.receivedAt}, ${messages.id}) < (${cursor.receivedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
-                : undefined,
+              order.after,
             ),
           )
-          .orderBy(sql`${messages.receivedAt} desc nulls last`, sql`${messages.id} desc nulls last`)
+          .orderBy(...order.orderBy)
           .limit(INBOX_PAGE_SIZE + 1)
         const labelsByMessage = await readMessageLabels(
           db,

@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi'
+import { mailListSortSchema } from '../../shared/listSort.js'
 import { mailFolders } from '../messageActions/contract.js'
 
 const labelSchema = z.object({ id: z.uuid(), name: z.string(), color: z.string() })
@@ -37,7 +38,7 @@ export const listMessagesRoute = createRoute({
   tags: ['Mail'],
   summary: 'List the workspace inbox in pages of eight messages',
   description:
-    'Requires a valid session. Search is a case-insensitive literal substring across sender, subject, and full body. Pass nextCursor unchanged for the next page with the same search.',
+    'Requires a valid session. Search is a case-insensitive literal substring across sender, subject, and full body. Pass nextCursor unchanged for the next page with the same search, folder and sort; a cursor issued for another sort is rejected.',
   request: {
     params: z.object({
       slug: z
@@ -55,11 +56,13 @@ export const listMessagesRoute = createRoute({
         .enum(mailFolders)
         .optional()
         .openapi({ description: 'Folder to list; defaults to inbox.' }),
+      sort: mailListSortSchema,
     }),
   },
   responses: {
     200: {
-      description: 'Messages ordered by receivedAt descending, then id descending.',
+      description:
+        'Messages ordered by the requested sort: newest/oldest by receivedAt, sender-* by lowercase senderName, subject-* by lowercase subject (both on their first 256 characters), then id in the same direction.',
       content: {
         'application/json': {
           schema: z
@@ -69,7 +72,7 @@ export const listMessagesRoute = createRoute({
       },
     },
     400: {
-      description: 'The message cursor or folder is invalid.',
+      description: 'The message cursor, folder or sort is invalid.',
       content: { 'application/problem+json': { schema: problemSchema } },
     },
     401: {

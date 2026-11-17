@@ -39,6 +39,7 @@ describe('list inbox messages', () => {
       ...scope,
       folder: 'inbox',
       search: '',
+      sort: 'newest',
       cursor: null,
     })
   })
@@ -52,6 +53,7 @@ describe('list inbox messages', () => {
         ...scope,
         folder,
         search: '',
+        sort: 'newest',
         cursor: null,
       })
     },
@@ -93,6 +95,7 @@ describe('list inbox messages', () => {
       ...scope,
       folder: 'archive',
       search: '',
+      sort: 'newest',
       cursor: { id: message(2).id, receivedAt: message(2).receivedAt },
     })
   })
@@ -105,6 +108,7 @@ describe('list inbox messages', () => {
       ...scope,
       folder: 'inbox',
       search: 'Invoice %_\\',
+      sort: 'newest',
       cursor: null,
     })
     await listMessages(source, scope, { q: '   ' })
@@ -112,6 +116,7 @@ describe('list inbox messages', () => {
       ...scope,
       folder: 'inbox',
       search: '',
+      sort: 'newest',
       cursor: null,
     })
   })
@@ -127,13 +132,116 @@ describe('list inbox messages', () => {
     encode({ id: message(1).id }),
     encode(null),
     encode([]),
-    'a'.repeat(513),
+    'a'.repeat(4097),
   ])('rejects malformed cursor %s without accessing the repository', async (cursor) => {
     const source = repository()
 
     await expect(listMessages(source, scope, { cursor })).rejects.toBeInstanceOf(
       InvalidMessageCursorError,
     )
+    expect(source.findMessages).not.toHaveBeenCalled()
+  })
+
+  const decode = (cursor: string | null) =>
+    JSON.parse(Buffer.from(cursor ?? '', 'base64url').toString('utf8'))
+  const page = (items: InboxMessage[]) => repository(items)
+  const nine = () => Array.from({ length: 9 }, (_, i) => message(9 - i))
+
+  it.each([
+    ['newest', { sort: 'newest', receivedAt: '2026-10-01T12:00:00.000Z' }, 'receivedAt'],
+    ['oldest', { sort: 'oldest', receivedAt: '2026-10-01T12:00:00.000Z' }, 'receivedAt'],
+    ['sender-asc', { sort: 'sender-asc', key: 'Sender 2' }, 'key'],
+    ['sender-desc', { sort: 'sender-desc', key: 'Sender 2' }, 'key'],
+    ['subject-asc', { sort: 'subject-asc', key: 'Subject 2' }, 'key'],
+    ['subject-desc', { sort: 'subject-desc', key: 'Subject 2' }, 'key'],
+  ] as const)(
+    'encodes the %s sort and its key in the cursor and resumes from it',
+    async (sort, payload, field) => {
+      const source = page(nine())
+      const first = await listMessages(source, scope, { sort })
+
+      expect(source.findMessages).toHaveBeenLastCalledWith({
+        ...scope,
+        folder: 'inbox',
+        search: '',
+        sort,
+        cursor: null,
+      })
+      expect(decode(first.nextCursor)).toEqual({ ...payload, id: message(2).id })
+
+      await listMessages(source, scope, { sort, cursor: first.nextCursor ?? '' })
+      expect(source.findMessages).toHaveBeenLastCalledWith({
+        ...scope,
+        folder: 'inbox',
+        search: '',
+        sort,
+        cursor:
+          field === 'receivedAt'
+            ? { id: message(2).id, receivedAt: message(2).receivedAt }
+            : { id: message(2).id, key: payload[field] },
+      })
+    },
+  )
+
+  it('accepts a legacy cursor without a sort as a newest cursor only', async () => {
+    const legacy = encode({ receivedAt: '2026-10-01T12:00:00.000Z', id: message(1).id })
+    const source = page([])
+
+    await listMessages(source, scope, { cursor: legacy })
+    expect(source.findMessages).toHaveBeenLastCalledWith({
+      ...scope,
+      folder: 'inbox',
+      search: '',
+      sort: 'newest',
+      cursor: { id: message(1).id, receivedAt: new Date('2026-10-01T12:00:00.000Z') },
+    })
+    await expect(
+      listMessages(source, scope, { sort: 'oldest', cursor: legacy }),
+    ).rejects.toBeInstanceOf(InvalidMessageCursorError)
+  })
+
+  it.each([
+    ['sender-asc', 'subject-asc'],
+    ['sender-asc', 'sender-desc'],
+    ['newest', 'oldest'],
+    ['oldest', 'newest'],
+    ['subject-desc', 'newest'],
+  ] as const)('rejects a %s cursor on a %s request', async (issuedFor, requested) => {
+    const first = await listMessages(page(nine()), scope, { sort: issuedFor })
+    const source = page([])
+
+    await expect(
+      listMessages(source, scope, { sort: requested, cursor: first.nextCursor ?? '' }),
+    ).rejects.toBeInstanceOf(InvalidMessageCursorError)
+    expect(source.findMessages).not.toHaveBeenCalled()
+  })
+
+  it('bounds a text cursor key to the first 256 code points', async () => {
+    const long = `${'😀'.repeat(300)}`
+    const items = nine().map((item) => ({ ...item, subject: long }))
+    const first = await listMessages(page(items), scope, { sort: 'subject-asc' })
+
+    expect(decode(first.nextCursor).key).toBe('😀'.repeat(256))
+    await listMessages(page([]), scope, { sort: 'subject-asc', cursor: first.nextCursor ?? '' })
+  })
+
+  it.each([
+    ['sender-asc', { sort: 'sender-asc', key: 'a'.repeat(257), id: message(1).id }],
+    [
+      'sender-asc',
+      { sort: 'sender-asc', receivedAt: '2026-10-01T12:00:00.000Z', id: message(1).id },
+    ],
+    ['newest', { sort: 'newest', key: 'Sender', id: message(1).id }],
+    ['sender-asc', { sort: 'sender-asc', key: 7, id: message(1).id }],
+    ['newest', { sort: 'unknown', key: 'Sender', id: message(1).id }],
+    ['subject-asc', { sort: 'subject-asc', key: 'Subject', id: message(1).id, extra: true }],
+    ['subject-asc', { sort: 'subject-asc', id: message(1).id }],
+    ['oldest', { sort: 'oldest', receivedAt: '2026-02-30T12:00:00.000Z', id: message(1).id }],
+  ] as const)('rejects a malformed %s cursor %j', async (sort, payload) => {
+    const source = page([])
+    await expect(
+      listMessages(source, scope, { sort, cursor: encode(payload) }),
+    ).rejects.toBeInstanceOf(InvalidMessageCursorError)
     expect(source.findMessages).not.toHaveBeenCalled()
   })
 

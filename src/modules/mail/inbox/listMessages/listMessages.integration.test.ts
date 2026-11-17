@@ -262,6 +262,93 @@ describe('Workspace Inbox PostgreSQL integration', () => {
     expect(new Set(all.map((message) => message.id)).size).toBe(18)
   })
 
+  describe('sorting', () => {
+    // Lowercase-only letters keep the expected order independent of the database collation.
+    const senders = ['beta', 'Alpha', 'gamma', 'ALPHA', 'Beta', 'alpha', 'delta']
+    const subjects = ['zeta', 'Eta', 'theta', 'ETA', 'Zeta', 'iota']
+    const sorted: MailMessage[] = Array.from({ length: 19 }, (_, index) => ({
+      // Ids are deliberately unrelated to every sort key so the tie-break is observable.
+      id: `00000000-0000-4000-8000-${String(((index * 7) % 19) + 1).padStart(12, '0')}`,
+      senderName: senders[index % senders.length] ?? '',
+      subject: subjects[index % subjects.length] ?? '',
+      body: `Sorted body ${index}`,
+      receivedAt: new Date(Date.UTC(2026, 9, 2, 12, 0, Math.floor(index / 4))),
+    }))
+    const compare = (left: string | number, right: string | number) =>
+      left < right ? -1 : left > right ? 1 : 0
+    const keyOf = {
+      newest: (message: MailMessage) => message.receivedAt.getTime(),
+      oldest: (message: MailMessage) => message.receivedAt.getTime(),
+      'sender-asc': (message: MailMessage) => message.senderName.toLowerCase(),
+      'sender-desc': (message: MailMessage) => message.senderName.toLowerCase(),
+      'subject-asc': (message: MailMessage) => message.subject.toLowerCase(),
+      'subject-desc': (message: MailMessage) => message.subject.toLowerCase(),
+    } as const
+    const expected = (sort: keyof typeof keyOf) => {
+      const sign = sort === 'newest' || sort.endsWith('-desc') ? -1 : 1
+      return [...sorted]
+        .sort(
+          (left, right) =>
+            sign * (compare(keyOf[sort](left), keyOf[sort](right)) || compare(left.id, right.id)),
+        )
+        .map(({ id }) => id)
+    }
+
+    beforeEach(async () => {
+      await owner.query('DELETE FROM mail.message')
+      await inWorkspaceTransaction(pool, 'workspace-a', async (client) => {
+        await drizzle(client)
+          .insert(messages)
+          .values(sorted.map((message) => ({ ...message, workspaceId: 'workspace-a' })))
+      })
+    })
+
+    it.each(Object.keys(keyOf) as (keyof typeof keyOf)[])(
+      'pages through every message by %s across key ties without duplicates or skips',
+      async (sort) => {
+        const pages: ListMessagesResponse[] = [await getPage(`?sort=${sort}`)]
+        while (pages.at(-1)?.nextCursor)
+          pages.push(await getPage(`?sort=${sort}&cursor=${pages.at(-1)?.nextCursor}`))
+
+        expect(pages.map(({ items }) => items.length)).toEqual([8, 8, 3])
+        expect(pages.flatMap(({ items }) => items.map(({ id }) => id))).toEqual(expected(sort))
+      },
+    )
+
+    it('resumes long subjects from a bounded key, ordering by id past the first 256 characters', async () => {
+      const prefix = 'é'.repeat(300)
+      await owner.query(`UPDATE mail.message SET subject = $1 || md5(id::text)`, [prefix])
+      const first = await getPage('?sort=subject-desc')
+      const second = await getPage(`?sort=subject-desc&cursor=${first.nextCursor}`)
+
+      expect(first.nextCursor?.length).toBeLessThan(4096)
+      expect([...first.items, ...second.items].map(({ id }) => id)).toEqual(
+        sorted
+          .map(({ id }) => id)
+          .sort()
+          .reverse()
+          .slice(0, 16),
+      )
+    })
+
+    it('rejects a cursor from another sort and accepts a legacy cursor as newest', async () => {
+      const first = await getPage('?sort=sender-asc')
+      const response = await app.request(
+        `/api/v1/workspaces/acme/mail/messages?sort=subject-desc&cursor=${first.nextCursor}`,
+        { headers: { Cookie: 'test-session=valid' } },
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ code: 'invalid_message_cursor' })
+
+      const newest = await getPage('?sort=newest')
+      const last = newest.items.at(-1)
+      const legacy = Buffer.from(JSON.stringify({ receivedAt: last?.receivedAt, id: last?.id }))
+      expect(await getPage(`?cursor=${legacy.toString('base64url')}`)).toEqual(
+        await getPage(`?cursor=${newest.nextCursor}`),
+      )
+    })
+  })
+
   it('returns an empty page when the cursor is older than every message', async () => {
     const cursor = Buffer.from(
       JSON.stringify({ receivedAt: '2020-01-01T00:00:00.000Z', id: fixtures[0]?.id }),
@@ -406,6 +493,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
           userId: 'owner-1',
           folder,
           search: '[MailFlow QA]',
+          sort: 'newest',
           cursor,
         })
         items.push(...page.slice(0, 8).map(({ id }) => id))
@@ -451,6 +539,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       userId: 'user',
       folder: 'inbox',
       search: '',
+      sort: 'newest',
       cursor: null,
     })
     const b = await repository.findMessages({
@@ -458,6 +547,7 @@ describe('Workspace Inbox PostgreSQL integration', () => {
       userId: 'user',
       folder: 'inbox',
       search: '',
+      sort: 'newest',
       cursor: null,
     })
     expect(a).toHaveLength(9)
