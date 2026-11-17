@@ -88,6 +88,7 @@ describe('folder query', () => {
       userId: 'user',
       folder: 'spam',
       search: 'invoice',
+      sort: 'newest',
       cursor: null,
     })
   })

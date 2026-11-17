@@ -2,6 +2,7 @@ import type { MailContext } from '../context/types.js'
 import { assertMailContext } from '../context/types.js'
 import type { MailClient, MailPool } from '../inbox/listMessages/types.js'
 import { inWorkspaceTransaction } from '../infrastructure/database/workspaceTransaction.js'
+import { type MailListOrder, type MailListSort, mailListOrder } from '../shared/listSort.js'
 import {
   type DiscardDraftsResult,
   DraftConflictError,
@@ -28,6 +29,12 @@ const empty: DraftContent = {
   text: '',
   attachments: [],
   labelIds: [],
+}
+// Constant ORDER BY keys; the request sort only selects among them.
+const draftSortKeys: Record<MailListOrder['field'], string> = {
+  date: 'd.updated_at',
+  sender: "lower(coalesce(nullif(trim(d.content->>'recipientName'),''),d.content->>'to',''))",
+  subject: "lower(coalesce(d.content->>'subject',''))",
 }
 export function createDraftRepository(pool: MailPool) {
   const transaction = <T>(context: MailContext, operation: (client: MailClient) => Promise<T>) => {
@@ -156,8 +163,9 @@ export function createDraftRepository(pool: MailPool) {
         const row = await read(client, context, id, true)
         return row?.state === 'active' ? view(client, context, row) : null
       }),
-    list: (context: MailContext, offset: number, search = '') =>
+    list: (context: MailContext, offset: number, search = '', sort: MailListSort = 'newest') =>
       transaction(context, async (client) => {
+        const { field, direction } = mailListOrder(sort)
         // Literal, case-insensitive substring match; LIKE wildcards in the text are escaped.
         const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
         const rows = await client.query(
@@ -170,7 +178,7 @@ export function createDraftRepository(pool: MailPool) {
           or exists (select 1 from mail.label l
             where l.workspace_id=d.workspace_id and l.name ilike $5
             and l.id::text in (select jsonb_array_elements_text(d.content->'labelIds'))))
-        order by d.updated_at desc,d.id desc limit 21 offset $3`,
+        order by ${draftSortKeys[field]} ${direction},d.id ${direction} limit 21 offset $3`,
           [context.workspaceId, context.userId, offset, search, pattern],
         )
         return rows.rows

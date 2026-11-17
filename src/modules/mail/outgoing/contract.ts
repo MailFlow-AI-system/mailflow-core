@@ -1,5 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi'
 import { draftReferenceSchema } from '../drafts/contract.js'
+import { mailListSortSchema } from '../shared/listSort.js'
 
 const attachmentSchema = z.strictObject({
   id: z.uuid(),
@@ -89,12 +90,13 @@ export const sentEmailsRoute = createRoute({
         description:
           'Optional case-insensitive literal search across recipients, subject, text and label names.',
       }),
+      sort: mailListSortSchema,
     }),
   },
   responses: {
     200: {
       description:
-        'A page of twenty confirmed emails owned by the current user in the authorized workspace, newest first.',
+        'A page of twenty confirmed emails owned by the current user in the authorized workspace, ordered by the requested sort: newest/oldest by sentAt, sender-* by the lowercase displayed recipient (recipientName, else the first To address), subject-* by lowercase subject, then id in the same direction.',
       content: {
         'application/json': {
           schema: z.object({

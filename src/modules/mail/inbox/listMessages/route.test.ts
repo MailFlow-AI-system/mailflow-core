@@ -88,6 +88,7 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
       userId: 'user',
       folder: 'inbox',
       search: 'invoice',
+      sort: 'newest',
       cursor: null,
     })
   })
@@ -121,6 +122,48 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
       code: 'invalid_message_cursor',
       requestId: 'cursor-test',
     })
+    expect(repository.findMessages).not.toHaveBeenCalled()
+  })
+
+  it.each(['oldest', 'sender-asc', 'subject-desc'])('forwards the %s sort', async (sort) => {
+    const { app, repository } = createTestApp()
+
+    const response = await app.request(`/api/v1/workspaces/acme/mail/messages?sort=${sort}`)
+
+    expect(response.status).toBe(200)
+    expect(repository.findMessages).toHaveBeenCalledWith(expect.objectContaining({ sort }))
+  })
+
+  it.each(['unknown', 'NEWEST', 'sender', ''])(
+    'returns the invalid query problem for sort %j',
+    async (sort) => {
+      const { app, repository } = createTestApp()
+
+      const response = await app.request(`/api/v1/workspaces/acme/mail/messages?sort=${sort}`)
+
+      expect(response.status).toBe(400)
+      expect(response.headers.get('content-type')).toContain('application/problem+json')
+      expect(await response.json()).toMatchObject({ code: 'invalid_message_query' })
+      expect(repository.findMessages).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects a cursor issued for another sort', async () => {
+    const { app, repository } = createTestApp()
+    const cursor = Buffer.from(
+      JSON.stringify({
+        sort: 'sender-asc',
+        key: 'Ada',
+        id: '00000000-0000-4000-8000-000000000001',
+      }),
+    ).toString('base64url')
+
+    const response = await app.request(
+      `/api/v1/workspaces/acme/mail/messages?sort=subject-asc&cursor=${cursor}`,
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'invalid_message_cursor' })
     expect(repository.findMessages).not.toHaveBeenCalled()
   })
 
@@ -163,6 +206,7 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
       userId: 'user',
       folder: 'inbox',
       search: '',
+      sort: 'newest',
       cursor: null,
     })
   })
@@ -235,6 +279,7 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
       'q',
       'cursor',
       'folder',
+      'sort',
     ])
     expect(operation.responses).toHaveProperty('200')
     expect(operation.responses).toHaveProperty('400')
