@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi'
+import { hasNoNul } from '../shared/searchText.js'
 
 export const draftReferenceSchema = z.strictObject({
   id: z.uuid(),
@@ -44,7 +45,7 @@ export const saveDraftSchema = draftContentSchema
     if (JSON.stringify(value).includes('\\u0000'))
       context.addIssue({ code: 'custom', message: 'Null characters are not supported' })
   })
-export const searchTextSchema = z.string().trim().max(200)
+export const searchTextSchema = z.string().trim().max(200).refine(hasNoNul)
 export const discardDraftsSchema = z
   .strictObject({
     items: z.array(draftReferenceSchema).min(1).max(50),

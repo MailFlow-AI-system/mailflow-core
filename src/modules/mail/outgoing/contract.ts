@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi'
 import { draftReferenceSchema } from '../drafts/contract.js'
 import { mailListSortSchema } from '../shared/listSort.js'
+import { hasNoNul } from '../shared/searchText.js'
 
 const attachmentSchema = z.strictObject({
   id: z.uuid(),
@@ -86,7 +87,7 @@ export const sentEmailsRoute = createRoute({
   request: {
     query: z.object({
       offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
-      q: z.string().trim().max(200).default('').openapi({
+      q: z.string().trim().max(200).refine(hasNoNul).default('').openapi({
         description:
           'Optional case-insensitive literal search across recipients, subject, text and label names.',
       }),

@@ -148,6 +148,16 @@ describe('GET /api/v1/workspaces/acme/mail/messages', () => {
     },
   )
 
+  it('returns the invalid query problem for a search containing NUL', async () => {
+    const { app, repository } = createTestApp()
+
+    const response = await app.request('/api/v1/workspaces/acme/mail/messages?q=in%00voice')
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'invalid_message_query' })
+    expect(repository.findMessages).not.toHaveBeenCalled()
+  })
+
   it('rejects a cursor issued for another sort', async () => {
     const { app, repository } = createTestApp()
     const cursor = Buffer.from(
