@@ -236,6 +236,8 @@ describe('list inbox messages', () => {
     ['newest', { sort: 'unknown', key: 'Sender', id: message(1).id }],
     ['subject-asc', { sort: 'subject-asc', key: 'Subject', id: message(1).id, extra: true }],
     ['subject-asc', { sort: 'subject-asc', id: message(1).id }],
+    // PostgreSQL text cannot hold NUL, so such a key could only fail in the database.
+    ['sender-desc', { sort: 'sender-desc', key: 'Sen\u0000der', id: message(1).id }],
     ['oldest', { sort: 'oldest', receivedAt: '2026-02-30T12:00:00.000Z', id: message(1).id }],
   ] as const)('rejects a malformed %s cursor %j', async (sort, payload) => {
     const source = page([])
