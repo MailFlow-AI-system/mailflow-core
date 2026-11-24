@@ -24,8 +24,8 @@ const authConfig = {
   secret: 'runtime-test-secret-at-least-32-characters',
   baseURL: 'http://127.0.0.1:8080',
   siteURL: 'http://localhost:4321',
-  webAppURL: 'http://workspace.test:3003',
-  allowedOrigins: ['http://localhost:4321', 'http://workspace.test:3003'],
+  webAppURL: 'http://localhost:3003',
+  allowedOrigins: ['http://localhost:4321', 'http://localhost:3003'],
   appEnv: 'development' as const,
   resend: { apiKey: 'no-external-delivery', from: 'noreply@mailflow.invalid' },
 }
@@ -38,20 +38,19 @@ it('keeps workspace capabilities dark by default without requiring workspace dat
   expect(runtime.allowedAuthOrigins).toEqual(authConfig.allowedOrigins)
   expect(runtime.mailWorkspaceAuthority?.resolve).toBeTypeOf('function')
   expect(runtime.workspaces).toBeUndefined()
-  expect(runtime.workspaceSelection).toBeUndefined()
-  expect(runtime.workspaceEntry).toBeUndefined()
   expect(runtime.onboarding).toBeUndefined()
   expect(assertWorkspaceDatabaseRole).not.toHaveBeenCalled()
 })
 
 it('rejects inconsistent rollout before constructing auth or checking privileges', async () => {
   for (const environment of [
+    { APP_ENV: 'development', WORKSPACE_SWITCHING_ENABLED: 'true' },
+    // Switching needs the workspace hosting configuration, which this legacy config lacks.
     {
-      APP_ENV: 'staging',
+      APP_ENV: 'development',
       WORKSPACE_READ_ENABLED: 'true',
-      WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
+      WORKSPACE_SWITCHING_ENABLED: 'true',
     },
-    { APP_ENV: 'development', WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true' },
     { WORKSPACE_SIGNUP_CUTOVER_ENABLED: 'true' },
     {
       WORKSPACE_ONBOARDING_ENABLED: 'true',
@@ -64,22 +63,27 @@ it('rejects inconsistent rollout before constructing auth or checking privileges
   expect(assertWorkspaceDatabaseRole).not.toHaveBeenCalled()
 })
 
-it('assembles authorized reads and selection only after both privilege checks', async () => {
+it('assembles authorized reads and workspace handoff only after both privilege checks', async () => {
   const runtime = await createIdentityWorkspaceRuntime({
     ...dependencies,
+    authConfig: {
+      ...authConfig,
+      allowedOrigins: [authConfig.siteURL],
+      workspaceDeployment: { baseHost: 'localhost', webOrigin: 'http://localhost:3003' },
+    },
     environment: {
       APP_ENV: 'development',
       WORKSPACE_READ_ENABLED: 'true',
-      WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
+      WORKSPACE_SWITCHING_ENABLED: 'true',
     },
   })
   expect(assertWorkspaceDatabaseRole).toHaveBeenCalledWith(pool)
   expect(assertWorkspaceSelectionDatabaseRole).toHaveBeenCalledWith(pool)
   expect(runtime.workspaces?.reader.context).toBeTypeOf('function')
-  expect(runtime.workspaceSelection?.selection.select).toBeTypeOf('function')
-  expect(runtime.workspaceEntry?.reader.resolve).toBeTypeOf('function')
-  expect(runtime.workspaceSelection?.allowedOrigins).toEqual(authConfig.allowedOrigins)
-  expect(vi.mocked(createAuth).mock.calls[0]?.[4]).toEqual({ localWorkspaceCookie: true })
+  const provisioning = vi.mocked(createAuth).mock.calls[0]?.[4]
+  expect(provisioning?.workspaceHandoff?.issue).toBeTypeOf('function')
+  expect(provisioning?.workspaceHandoff?.consume).toBeTypeOf('function')
+  expect(provisioning?.accountWorkspace).toBeTypeOf('function')
   expect(vi.mocked(assertWorkspaceSelectionDatabaseRole).mock.invocationCallOrder[0]).toBeLessThan(
     vi.mocked(createAuth).mock.invocationCallOrder[0] ?? 0,
   )
@@ -91,7 +95,7 @@ it('assembles cutover with protected OTP storage and the exact signup origin', a
     environment: {
       WORKSPACE_ONBOARDING_ENABLED: 'true',
       WORKSPACE_SIGNUP_CUTOVER_ENABLED: 'true',
-      WORKSPACE_WEB_BASE_ORIGIN: 'http://workspace.test:3003',
+      WORKSPACE_WEB_BASE_ORIGIN: 'http://localhost:3003',
     },
   })
   expect(assertOnboardingDatabaseRole).toHaveBeenCalledWith(pool)
@@ -102,7 +106,7 @@ it('assembles cutover with protected OTP storage and the exact signup origin', a
   const ciphertext = await storage?.encrypt('123456')
   expect(ciphertext).not.toContain('123456')
   expect(await storage?.decrypt(ciphertext ?? '')).toBe('123456')
-  expect(vi.mocked(createAuth).mock.calls[0]?.[4]?.localWorkspaceCookie).toBeUndefined()
+  expect(vi.mocked(createAuth).mock.calls[0]?.[4]?.workspaceHandoff).toBeUndefined()
 })
 
 it('fails closed before constructing auth if a required database role is unsafe', async () => {
@@ -112,10 +116,14 @@ it('fails closed before constructing auth if a required database role is unsafe'
   await expect(
     createIdentityWorkspaceRuntime({
       ...dependencies,
+      authConfig: {
+        ...authConfig,
+        workspaceDeployment: { baseHost: 'localhost', webOrigin: 'http://localhost:3003' },
+      },
       environment: {
         APP_ENV: 'development',
         WORKSPACE_READ_ENABLED: 'true',
-        WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
+        WORKSPACE_SWITCHING_ENABLED: 'true',
       },
     }),
   ).rejects.toThrow('unsafe database role')
