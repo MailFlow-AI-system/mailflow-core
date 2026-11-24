@@ -30,3 +30,22 @@ it('normalizes signup fields and rejects unsafe, reserved and extra selectors', 
     false,
   )
 })
+
+it('reserves every environment host that shares the workspace namespace', () => {
+  const value = {
+    name: 'Maya',
+    email: 'maya@example.com',
+    password: 'correct horse battery',
+    workspaceName: 'Team',
+  }
+  for (const workspaceSlug of [
+    'app-dev',
+    'app-staging',
+    'site-dev',
+    'site-staging',
+    'api-dev',
+    'api-staging',
+    'WWW',
+  ])
+    expect(signupSchema.safeParse({ ...value, workspaceSlug }).success).toBe(false)
+})

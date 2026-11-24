@@ -29,7 +29,9 @@ export async function createWorkspaceTestFixture() {
   END $$;
   GRANT USAGE ON SCHEMA identity_workspace TO workspace_test_app;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace TO workspace_test_app;
-  GRANT EXECUTE ON FUNCTION identity_workspace.select_workspace_preference(text) TO workspace_test_app;`)
+  GRANT EXECUTE ON FUNCTION identity_workspace.select_workspace_preference(text) TO workspace_test_app;
+  GRANT EXECUTE ON FUNCTION identity_workspace.issue_workspace_handoff(text, text) TO workspace_test_app;
+  GRANT EXECUTE ON FUNCTION identity_workspace.consume_workspace_handoff(text, text) TO workspace_test_app;`)
   } finally {
     try {
       await migrationLock.query('select pg_advisory_unlock(77193022)')

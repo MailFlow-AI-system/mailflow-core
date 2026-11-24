@@ -85,16 +85,13 @@ const baseHost = process.env.MAILFLOW_WORKSPACE_TEST_BASE_HOST ?? 'workspace.tes
 const host = `${fixture.acmeSlug}.${baseHost}`
 const targetHost = `${fixture.northwindSlug}.${baseHost}`
 const controlKey = randomUUID()
+const { webAppURL: _retiredEntryHost, ...fixtureAuthConfig } = fixture.authConfig
 const authConfig = {
-  ...fixture.authConfig,
+  ...fixtureAuthConfig,
   baseURL: 'http://127.0.0.1:8083',
-  webAppURL: `http://${host}:${port}`,
-  allowedOrigins: [
-    fixture.authConfig.siteURL,
-    `http://${host}:${port}`,
-    `http://${targetHost}:${port}`,
-    `http://${baseHost}:${port}`,
-  ],
+  allowedOrigins: [fixture.authConfig.siteURL],
+  // Workspaces live on `{slug}.{baseHost}:3003`; each host keeps its own host-only session.
+  workspaceDeployment: { baseHost, webOrigin: `http://${baseHost}:${port}` },
 }
 const runtime = await createIdentityWorkspaceRuntime({
   pool: fixture.pool,
@@ -104,16 +101,12 @@ const runtime = await createIdentityWorkspaceRuntime({
   environment: {
     APP_ENV: 'development',
     WORKSPACE_READ_ENABLED: 'true',
-    WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
+    WORKSPACE_SWITCHING_ENABLED: 'true',
   },
 })
 const auth = runtime.auth
 let clientIp = testClientIp()
-const selection = runtime.workspaceSelection?.selection
-const entryReader = runtime.workspaceEntry?.reader
-if (!selection || !entryReader || !runtime.workspaces)
-  throw new Error('Workspace fixture capabilities are required')
-let failNextEntry = false
+if (!runtime.workspaces) throw new Error('Workspace fixture capabilities are required')
 const emptyEmail = `empty-${randomUUID()}@mailflow.invalid`
 const emptyUser = await fixture.auth.api.signUpEmail({
   body: { name: 'No Workspace', email: emptyEmail, password: fixture.password },
@@ -121,9 +114,6 @@ const emptyUser = await fixture.auth.api.signUpEmail({
 await fixture.admin.query('update identity_workspace."user" set email_verified=true where id=$1', [
   emptyUser.user.id,
 ])
-let selections = 0
-let failNext = false
-let revokeAfterSelection = false
 const globalMailCalls = 0
 let failNextBudget = false
 const budget = runtime.workspaces.consumeBudget
@@ -161,40 +151,6 @@ const app = createApp({
   workspaces: {
     reader: runtime.workspaces.reader,
     consumeBudget,
-  },
-  workspaceEntry: {
-    reader: {
-      resolve: async (actor) => {
-        if (failNextEntry) {
-          failNextEntry = false
-          throw new Error('Synthetic entry failure')
-        }
-        return entryReader.resolve(actor)
-      },
-    },
-    consumeBudget,
-  },
-  workspaceSelection: {
-    allowedOrigins: authConfig.allowedOrigins,
-    consumeBudget,
-    selection: {
-      select: async (actor, target) => {
-        selections += 1
-        if (failNext) {
-          failNext = false
-          throw new Error('Synthetic selection failure')
-        }
-        const result = await selection.select(actor, target)
-        if (result && revokeAfterSelection) {
-          revokeAfterSelection = false
-          await fixture.admin.query(
-            'delete from identity_workspace.member where user_id=$1 and organization_id=$2',
-            [fixture.userId, fixture.northwind],
-          )
-        }
-        return result
-      },
-    },
   },
   mailRepository: createMailMessageRepository(fixture.pool),
   mailWorkspaceBaseOrigin: `http://${baseHost}:3003`,
@@ -246,11 +202,9 @@ app.get('/__fixture', async (context) => {
     password: fixture.password,
     targetId: fixture.northwind,
     currentId: fixture.acme,
-    fallbackHost: `${[fixture.acme, fixture.northwind].sort()[0] === fixture.acme ? fixture.acmeSlug : fixture.northwindSlug}.${baseHost}`,
     unrelatedId: fixture.globex,
     unrelatedHost: `${fixture.globexSlug}.${baseHost}`,
     controlKey,
-    selections,
     globalMailCalls,
     preference: preference.rows[0]?.workspace_id ?? null,
     hasActiveOrganization: activeOrganization.rows[0].active,
@@ -278,10 +232,6 @@ app.post('/__fixture/control', async (context) => {
       "insert into identity_workspace.member(id,organization_id,user_id,role,created_at) values($1,$2,$3,'member',now()) on conflict(organization_id,user_id) do nothing",
       [randomUUID(), fixture.northwind, fixture.userId],
     )
-    selections = 0
-    failNext = false
-    revokeAfterSelection = false
-    failNextEntry = false
     failNextBudget = false
   } else if (action === 'reset-drafts')
     await fixture.admin.query('delete from mail.draft where user_id=ANY($1::text[])', [
@@ -298,14 +248,11 @@ app.post('/__fixture/control', async (context) => {
       'update mail.message set archived_at=null, archived_by=null, trashed_at=null, trashed_by=null, spam_at=null, spam_by=null where workspace_id=any($1::text[])',
       [workspaces],
     )
-  } else if (action === 'fail-next') failNext = true
-  else if (action === 'fail-next-entry') failNextEntry = true
-  else if (action === 'fail-next-budget') failNextBudget = true
+  } else if (action === 'fail-next-budget') failNextBudget = true
   else if (action === 'expire-session')
     await fixture.admin.query('delete from identity_workspace.session where user_id=$1', [
       fixture.userId,
     ])
-  else if (action === 'revoke-after-selection') revokeAfterSelection = true
   else if (action === 'revoke-northwind')
     await fixture.admin.query(
       'delete from identity_workspace.member where user_id=$1 and organization_id=$2',

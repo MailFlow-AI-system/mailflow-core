@@ -13,6 +13,7 @@ import { createAuth } from './createAuth.js'
 const databaseUrl = process.env.MAILFLOW_AUTH_INTEGRATION_DATABASE_URL
 const describeIntegration = databaseUrl === undefined ? describe.skip : describe
 
+const webAppURL = 'http://localhost:3000'
 describeIntegration('Better Auth PostgreSQL lifecycle', () => {
   const email = `qa-auth-${randomUUID()}@mailflow.invalid`
   const concurrentRecoveryEmail = `qa-auth-recovery-${randomUUID()}@mailflow.invalid`
@@ -21,7 +22,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
     BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
     BETTER_AUTH_URL: 'http://localhost:8080',
     SITE_URL: 'http://localhost:4321',
-    WEB_APP_URL: 'http://localhost:3000',
+    WEB_APP_URL: webAppURL,
     RESEND_API_KEY: 're_test_integration_placeholder',
     RESEND_FROM_EMAIL: 'noreply@mailflow-ai.online',
   })
@@ -98,7 +99,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: authConfig.webAppURL,
+        Origin: webAppURL,
         'x-real-ip': clientIp,
       },
       body: JSON.stringify({
@@ -109,7 +110,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
     })
 
     expect(signUp.status).toBe(200)
-    expect(signUp.headers.get('access-control-allow-origin')).toBe(authConfig.webAppURL)
+    expect(signUp.headers.get('access-control-allow-origin')).toBe(webAppURL)
     expect(signUp.headers.get('set-cookie')).toBeNull()
     expect(await signUp.json()).toMatchObject({
       token: null,
@@ -128,7 +129,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: authConfig.webAppURL,
+        Origin: webAppURL,
         'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, password: 'safe-test-password-123' }),
@@ -140,7 +141,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: authConfig.webAppURL,
+        Origin: webAppURL,
         'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, otp: verificationOtp.otp }),
@@ -158,7 +159,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: authConfig.webAppURL,
+        Origin: webAppURL,
         'x-real-ip': clientIp,
       },
       body: JSON.stringify({ email, password: 'safe-test-password-123' }),
@@ -207,7 +208,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Origin: authConfig.webAppURL,
+          Origin: webAppURL,
           'x-real-ip': ip,
         },
         body: JSON.stringify(body),
@@ -249,7 +250,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
         '/request-password-reset',
         {
           email: concurrentRecoveryEmail,
-          redirectTo: `${authConfig.webAppURL}/reset-password`,
+          redirectTo: `${webAppURL}/reset-password`,
         },
         '203.0.113.11',
       ),
@@ -257,7 +258,7 @@ describeIntegration('Better Auth PostgreSQL lifecycle', () => {
         '/request-password-reset',
         {
           email: concurrentRecoveryEmail,
-          redirectTo: `${authConfig.webAppURL}/reset-password`,
+          redirectTo: `${webAppURL}/reset-password`,
         },
         '203.0.113.12',
       ),

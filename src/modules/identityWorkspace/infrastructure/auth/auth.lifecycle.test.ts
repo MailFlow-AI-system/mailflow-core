@@ -10,6 +10,7 @@ import type {
 import { loadAuthConfig } from './authConfig.js'
 import { createAuthOptions } from './createAuth.js'
 
+const webAppURL = 'http://localhost:3000'
 const authConfig = loadAuthConfig({
   APP_ENV: 'development',
   BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
@@ -88,7 +89,7 @@ function post(
   app: Hono,
   path: string,
   body: unknown,
-  origin = authConfig.webAppURL,
+  origin = webAppURL,
   cookie?: string,
   clientIp = nextTestClientIp(),
 ) {
@@ -246,11 +247,11 @@ describe('Better Auth account email lifecycle', () => {
     setRejectPasswordReset(true)
     const knownEmailReset = await post(app, '/request-password-reset', {
       email,
-      redirectTo: `${authConfig.webAppURL}/reset-password`,
+      redirectTo: `${webAppURL}/reset-password`,
     })
     const unknownEmailReset = await post(app, '/request-password-reset', {
       email: 'unknown@mailflow.invalid',
-      redirectTo: `${authConfig.webAppURL}/reset-password`,
+      redirectTo: `${webAppURL}/reset-password`,
     })
     expect(knownEmailReset.status).toBe(503)
     const failedResetBody = await knownEmailReset.json()
@@ -280,7 +281,7 @@ describe('Better Auth account email lifecycle', () => {
     setRejectPasswordReset(false)
     const resetRequest = await post(app, '/request-password-reset', {
       email,
-      redirectTo: `${authConfig.webAppURL}/reset-password`,
+      redirectTo: `${webAppURL}/reset-password`,
     })
     expect(resetRequest.status).toBe(200)
     expect(await resetRequest.json()).toMatchObject({ status: true })
@@ -291,7 +292,7 @@ describe('Better Auth account email lifecycle', () => {
     const callback = await app.request(`${resetUrl.pathname}${resetUrl.search}`)
     expect(callback.status).toBe(302)
     const callbackLocation = new URL(callback.headers.get('location') ?? '')
-    expect(callbackLocation.origin).toBe(authConfig.webAppURL)
+    expect(callbackLocation.origin).toBe(webAppURL)
     expect(callbackLocation.pathname).toBe('/reset-password')
     expect(callbackLocation.searchParams.get('token')).toBe(resetUrl.pathname.split('/').at(-1))
 
@@ -350,13 +351,13 @@ describe('Better Auth account email lifecycle', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Origin: authConfig.webAppURL,
+          Origin: webAppURL,
           'x-real-ip': '192.0.2.88',
           'x-forwarded-for': forwardedIp,
         },
         body: JSON.stringify({
           email,
-          redirectTo: `${authConfig.webAppURL}/reset-password`,
+          redirectTo: `${webAppURL}/reset-password`,
         }),
       })
     const concurrentAttempts = await Promise.all(
@@ -402,8 +403,8 @@ describe('Better Auth account email lifecycle', () => {
     const failedDelivery = await post(
       app,
       '/request-password-reset',
-      { email, redirectTo: `${authConfig.webAppURL}/reset-password` },
-      authConfig.webAppURL,
+      { email, redirectTo: `${webAppURL}/reset-password` },
+      webAppURL,
       undefined,
       '192.0.2.10',
     )
@@ -413,8 +414,8 @@ describe('Better Auth account email lifecycle', () => {
     const otherIpAttempt = await post(
       app,
       '/request-password-reset',
-      { email, redirectTo: `${authConfig.webAppURL}/reset-password` },
-      authConfig.webAppURL,
+      { email, redirectTo: `${webAppURL}/reset-password` },
+      webAppURL,
       undefined,
       '192.0.2.11',
     )
@@ -431,8 +432,8 @@ describe('Better Auth account email lifecycle', () => {
     const retry = await post(
       app,
       '/request-password-reset',
-      { email, redirectTo: `${authConfig.webAppURL}/reset-password` },
-      authConfig.webAppURL,
+      { email, redirectTo: `${webAppURL}/reset-password` },
+      webAppURL,
       undefined,
       '192.0.2.11',
     )
@@ -479,14 +480,14 @@ describe('Better Auth account email lifecycle', () => {
     const untrustedOrigin = await post(
       app,
       '/request-password-reset',
-      { email: 'unknown@mailflow.invalid', redirectTo: `${authConfig.webAppURL}/reset-password` },
+      { email: 'unknown@mailflow.invalid', redirectTo: `${webAppURL}/reset-password` },
       'https://attacker.invalid',
       'session=present',
     )
     expect(untrustedOrigin.status).toBe(403)
 
-    const failedCallback = `${authConfig.webAppURL}/reset-password?case=failed`
-    const successfulCallback = `${authConfig.webAppURL}/reset-password?case=successful`
+    const failedCallback = `${webAppURL}/reset-password?case=failed`
+    const successfulCallback = `${webAppURL}/reset-password?case=successful`
     setRejectedPasswordResetRedirects([failedCallback])
     const [failed, successful] = await Promise.all([
       post(app, '/request-password-reset', { email, redirectTo: failedCallback }),
@@ -604,7 +605,7 @@ describe('Better Auth account email lifecycle', () => {
 
     const resetRequest = await post(app, '/request-password-reset', {
       email,
-      redirectTo: `${authConfig.webAppURL}/reset-password`,
+      redirectTo: `${webAppURL}/reset-password`,
     })
     expect(resetRequest.status).toBe(200)
     const resetEmail = findLast(sent, (message) => message.kind === 'password-reset')

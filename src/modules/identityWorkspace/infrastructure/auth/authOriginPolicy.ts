@@ -1,4 +1,9 @@
-import type { AuthConfig, AuthOriginPolicy } from '../types/authConfig.js'
+import { RESERVED_WORKSPACE_SLUGS } from '../../onboarding/constants.js'
+import type {
+  AuthConfig,
+  AuthOriginPolicy,
+  WorkspaceDeploymentConfig,
+} from '../types/authConfig.js'
 
 const loopbackHosts = ['localhost', '127.0.0.1', '[::1]']
 const developmentOrigins = loopbackHosts.flatMap((host) =>
@@ -18,6 +23,9 @@ export function createAuthOriginPolicy(config: AuthConfig): AuthOriginPolicy {
       )
         return false
       if (config.appEnv === 'development' && loopbackHosts.includes(url.hostname)) return true
+      if (config.workspaceDeployment)
+        return workspaceSlugFromOrigin(config.workspaceDeployment, url) !== undefined
+      if (!config.webAppURL) return false
       const web = new URL(config.webAppURL)
       const api = new URL(config.baseURL)
       if (
@@ -32,17 +40,38 @@ export function createAuthOriginPolicy(config: AuthConfig): AuthOriginPolicy {
         /^[a-z0-9]+(?:-[a-z0-9]+)*\.localhost$/.test(url.hostname)
       )
         return true
-      const deployment = config.workspaceDeployment
-      if (!deployment || url.protocol !== 'https:' || url.port) return false
-      if (url.hostname === deployment.baseHost) return true
-      const suffix = `.${deployment.baseHost}`
-      if (!url.hostname.endsWith(suffix)) return false
-      const slug = url.hostname.slice(0, -suffix.length)
-      return slug.length <= 63 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+      return false
     } catch {
       return false
     }
   }
+}
+
+// Returns the workspace slug when `origin` is exactly `{slug}.{base host}` with the base
+// protocol and port. The bare base host, reserved names and nested labels never match.
+export function workspaceSlugFromOrigin(
+  deployment: WorkspaceDeploymentConfig,
+  origin: URL,
+): string | undefined {
+  const base = new URL(deployment.webOrigin)
+  if (
+    origin.protocol !== base.protocol ||
+    origin.port !== base.port ||
+    origin.username ||
+    origin.password ||
+    origin.origin === 'null'
+  )
+    return undefined
+  const suffix = `.${deployment.baseHost}`
+  if (!origin.hostname.endsWith(suffix)) return undefined
+  const slug = origin.hostname.slice(0, -suffix.length)
+  if (
+    slug.length > 63 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ||
+    RESERVED_WORKSPACE_SLUGS.has(slug)
+  )
+    return undefined
+  return slug
 }
 
 export function trustedAuthOrigins(config: AuthConfig, request?: Request) {

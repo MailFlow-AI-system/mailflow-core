@@ -24,8 +24,6 @@ export type {
 export { startIdentityWorkspaceWorker } from './workerRuntime.js'
 export { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 export { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
-export { createWorkspaceEntryRoutes } from './workspaces/entryRoute.js'
-export type { WorkspaceEntryDependencies } from './workspaces/entryTypes.js'
 export type {
   MailWorkspaceAuthority,
   MailWorkspaceResolution,
@@ -34,18 +32,15 @@ export type {
 export { createMailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
 export { createWorkspaceRoutes } from './workspaces/route.js'
 export {
-  workspaceLocalSwitchingEnabled,
   workspaceReadsEnabled,
+  workspaceSwitchingEnabled,
 } from './workspaces/runtimeConfig.js'
 export { assertWorkspaceSelectionDatabaseRole } from './workspaces/selectionDatabaseRole.js'
-export { createWorkspaceSelectionRoutes } from './workspaces/selectionRoute.js'
 export type {
   WorkspaceAccess,
   WorkspaceReader,
   WorkspaceRouteDependencies,
-  WorkspaceSelectionDependencies,
   WorkspaceSummary,
 } from './workspaces/types.js'
-export { createWorkspaceEntryReader } from './workspaces/workspaceEntryReader.js'
 export { createWorkspaceReader } from './workspaces/workspaceReader.js'
 export { createWorkspaceSelection } from './workspaces/workspaceSelection.js'

@@ -11,7 +11,8 @@ export type AuthConfig = {
   secret: string
   baseURL: string
   siteURL: string
-  webAppURL: string
+  // Legacy single-host Web origin; absent when workspaces are hosted per subdomain.
+  webAppURL?: string
   allowedOrigins: string[]
   appEnv: AppEnvironment
   resend: { apiKey: string; from: string }

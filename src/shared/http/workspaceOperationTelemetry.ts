@@ -29,10 +29,10 @@ function workspaceOperation(method: string, route: string): WorkspaceOperation |
       return 'list'
     case 'GET /api/v1/workspaces/:slug/context':
       return 'context'
-    case 'GET /api/v1/workspace-entry':
-      return 'entry'
-    case 'POST /api/v1/workspace-selection':
-      return 'selection'
+    case 'POST /api/auth/workspace-handoff/issue':
+      return 'handoff_issue'
+    case 'POST /api/auth/workspace-handoff/exchange':
+      return 'handoff_exchange'
     default:
       return undefined
   }
