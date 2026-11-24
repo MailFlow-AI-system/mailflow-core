@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { RESOLVED_CLIENT_IP_HEADER } from '../infrastructure/auth/clientIp.js'
 import { createWorkspaceTestFixture } from '../workspaces/fixtures.test-support.js'
 import { createOnboardingEnqueue } from './enqueueEmail.js'
 import { SignupConflict } from './errors.js'
@@ -301,7 +302,7 @@ describe('transactional workspace onboarding', () => {
         headers: {
           'Content-Type': 'application/json',
           Origin: fixture.authConfig.siteURL,
-          'x-real-ip': testClientIp(),
+          [RESOLVED_CLIENT_IP_HEADER]: testClientIp(),
         },
         body: JSON.stringify({ email: input.email, otp }),
       }),
@@ -361,7 +362,7 @@ describe('transactional workspace onboarding', () => {
             headers: {
               'Content-Type': 'application/json',
               Origin: fixture.authConfig.siteURL,
-              'x-real-ip': testClientIp(),
+              [RESOLVED_CLIENT_IP_HEADER]: testClientIp(),
             },
             body: JSON.stringify({ email: input.email, otp: incorrect }),
           }),
@@ -397,7 +398,7 @@ describe('transactional workspace onboarding', () => {
           headers: {
             'Content-Type': 'application/json',
             Origin: fixture.authConfig.siteURL,
-            'x-real-ip': clientIp,
+            [RESOLVED_CLIENT_IP_HEADER]: clientIp,
           },
           body: JSON.stringify(body),
         }),
@@ -477,7 +478,7 @@ describe('transactional workspace onboarding', () => {
         headers: {
           'Content-Type': 'application/json',
           Origin: fixture.authConfig.siteURL,
-          'x-real-ip': clientIp,
+          [RESOLVED_CLIENT_IP_HEADER]: clientIp,
         },
         body: JSON.stringify({ email: input.email, otp }),
       })

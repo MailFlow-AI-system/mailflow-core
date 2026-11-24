@@ -22,6 +22,20 @@ describe('loadConfig', () => {
     })
   })
 
+  it('loads an optional proxy secret and treats an empty value as unset', () => {
+    const proxySecret = 'p'.repeat(32)
+
+    expect(
+      loadConfig({ ...requiredEnvironment, MAILFLOW_PROXY_SECRET: proxySecret }),
+    ).toMatchObject({
+      proxySecret,
+    })
+    expect(
+      loadConfig({ ...requiredEnvironment, MAILFLOW_PROXY_SECRET: '' }).proxySecret,
+    ).toBeUndefined()
+    expect(() => loadConfig({ ...requiredEnvironment, MAILFLOW_PROXY_SECRET: 'short' })).toThrow()
+  })
+
   it('accepts an optional private Collector endpoint without requiring credentials', () => {
     expect(
       loadConfig({

@@ -5,6 +5,7 @@ import { cors } from 'hono/cors'
 import { problemDetailsResponse } from '#shared/http/problemDetails'
 import type { AuthRouteDependencies } from '../types/auth.js'
 import type {} from '../types/authContext.js'
+import { resolveClientIpMiddleware } from './clientIp.js'
 import { ONBOARDING_OTP_PATHS } from './routeConstants.js'
 
 export function installAuthRoutes<E extends Env, S extends Schema, BasePath extends string>(
@@ -14,6 +15,7 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
     allowedOrigins,
     isAllowedOrigin = (origin) => allowedOrigins.includes(origin),
     onboarding,
+    proxySecret,
   }: AuthRouteDependencies,
 ) {
   app.use(
@@ -33,6 +35,8 @@ export function installAuthRoutes<E extends Env, S extends Schema, BasePath exte
       exposeHeaders: ['X-Workspace-Identity', 'X-Workspace-Id', 'Retry-After'],
     }),
   )
+
+  app.use('/api/auth/*', resolveClientIpMiddleware(proxySecret))
 
   if (onboarding) {
     const limitOtpBody = bodyLimit({

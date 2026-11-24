@@ -8,6 +8,11 @@ import type {
   AccountEmailSender,
 } from '../../accountEmails/accountEmailSender.js'
 import { loadAuthConfig } from './authConfig.js'
+import {
+  PROXY_CLIENT_IP_HEADER,
+  RESOLVED_CLIENT_IP_HEADER,
+  resolveClientIpMiddleware,
+} from './clientIp.js'
 import { createAuthOptions } from './createAuth.js'
 
 const webAppURL = 'http://localhost:3000'
@@ -66,6 +71,7 @@ function createTestAuth(
     },
   })
   const app = new Hono()
+  app.use('/api/auth/*', resolveClientIpMiddleware(undefined))
   app.all('/api/auth/*', (context) => auth.handler(context.req.raw))
 
   return {
@@ -133,7 +139,7 @@ describe('Better Auth account email lifecycle', () => {
       storage: 'database',
       customRules: { '/request-password-reset': { window: 60, max: 3 } },
     })
-    expect(options.advanced.ipAddress.ipAddressHeaders).toEqual(['x-real-ip'])
+    expect(options.advanced.ipAddress.ipAddressHeaders).toEqual([RESOLVED_CLIENT_IP_HEADER])
   })
 
   it('requires a resent OTP, verifies without creating a session, and sends welcome once', async () => {
@@ -344,7 +350,7 @@ describe('Better Auth account email lifecycle', () => {
   it('limits concurrent recovery requests to three per trusted IP and ignores forged forwarded IPs', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-28T12:00:00.000Z'))
-    const { app } = createTestAuth('memory', 'x-real-ip')
+    const { app } = createTestAuth('memory', RESOLVED_CLIENT_IP_HEADER)
     const email = 'unknown-rate-limited@mailflow.invalid'
     const requestWithSpoofedForwardedIp = (forwardedIp: string) =>
       app.request('http://localhost:8080/api/auth/request-password-reset', {
@@ -354,6 +360,8 @@ describe('Better Auth account email lifecycle', () => {
           Origin: webAppURL,
           'x-real-ip': '192.0.2.88',
           'x-forwarded-for': forwardedIp,
+          [PROXY_CLIENT_IP_HEADER]: forwardedIp,
+          [RESOLVED_CLIENT_IP_HEADER]: forwardedIp,
         },
         body: JSON.stringify({
           email,

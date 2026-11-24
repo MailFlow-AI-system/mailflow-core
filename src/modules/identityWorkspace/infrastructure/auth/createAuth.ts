@@ -24,6 +24,7 @@ import {
   trustedAuthOrigins,
   workspaceSlugFromOrigin,
 } from './authOriginPolicy.js'
+import { RESOLVED_CLIENT_IP_HEADER } from './clientIp.js'
 import { workspaceOrigin } from './workspaceDeployment.js'
 import { workspaceHandoff } from './workspaceHandoffPlugin.js'
 
@@ -114,7 +115,7 @@ export function createAuthOptions(
             },
           }
         : {}),
-      ipAddress: { ipAddressHeaders: ['x-real-ip'] },
+      ipAddress: { ipAddressHeaders: [RESOLVED_CLIENT_IP_HEADER] },
       ...(provisioning.generateId ? { database: { generateId: provisioning.generateId } } : {}),
     },
     emailAndPassword: {

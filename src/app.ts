@@ -53,6 +53,7 @@ export function createApp({
     allowedOrigins: allowedAuthOrigins,
     ...(isAllowedAuthOrigin ? { isAllowedOrigin: isAllowedAuthOrigin } : {}),
     ...(onboarding ? { onboarding } : {}),
+    ...(config.proxySecret ? { proxySecret: config.proxySecret } : {}),
   })
   app.route('/', createHealthModule({ checkDatabase }))
   const resolveMailContext = createMailContextMiddleware(mailWorkspaceAuthority, {
