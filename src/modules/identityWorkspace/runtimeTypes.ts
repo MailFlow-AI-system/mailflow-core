@@ -8,12 +8,8 @@ import type {
   OnboardingRouteDependencies,
   OnboardingWorkerDependencies,
 } from './onboarding/types.js'
-import type { WorkspaceEntryDependencies } from './workspaces/entryTypes.js'
 import type { MailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
-import type {
-  WorkspaceRouteDependencies,
-  WorkspaceSelectionDependencies,
-} from './workspaces/types.js'
+import type { WorkspaceRouteDependencies } from './workspaces/types.js'
 
 export type IdentityWorkspaceRuntimeDependencies = {
   environment: NodeJS.ProcessEnv
@@ -31,8 +27,6 @@ export type IdentityWorkspaceRuntime = {
   allowedAuthOrigins: string[]
   isAllowedAuthOrigin?: AuthOriginPolicy
   workspaces?: WorkspaceRouteDependencies
-  workspaceSelection?: WorkspaceSelectionDependencies
-  workspaceEntry?: WorkspaceEntryDependencies
   onboarding?: OnboardingRouteDependencies
 }
 

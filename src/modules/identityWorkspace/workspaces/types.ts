@@ -3,7 +3,6 @@ import type { Pool, PoolClient } from 'pg'
 import type { Capability } from '../authorization/capabilities.js'
 import type { MemberRole } from '../authorization/roles.js'
 import type { AuthSession } from '../infrastructure/types/auth.js'
-import type { AuthOriginPolicy } from '../infrastructure/types/authConfig.js'
 
 export type WorkspaceSummary = {
   id: string
@@ -24,12 +23,6 @@ export type WorkspaceReader = {
 }
 export type WorkspaceSelection = {
   select: (userId: string, workspaceId: string) => Promise<WorkspaceSummary | null>
-}
-export type WorkspaceSelectionDependencies = {
-  selection: WorkspaceSelection
-  allowedOrigins: string[]
-  isAllowedOrigin?: AuthOriginPolicy
-  consumeBudget: DiscoveryBudget
 }
 export type WorkspaceRouteEnvironment = { Variables: { authSession: AuthSession } }
 export type WorkspaceMiddleware = MiddlewareHandler<WorkspaceRouteEnvironment>

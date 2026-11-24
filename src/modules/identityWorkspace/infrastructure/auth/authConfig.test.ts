@@ -13,34 +13,57 @@ const validEnvironment = {
 }
 
 describe('loadAuthConfig', () => {
-  it('binds remote switching to an exact HTTPS Web base and keeps the cookie scope narrow', () => {
+  it('binds workspace hosting to the environment root host without a separate entry host', () => {
     const environment = {
       ...validEnvironment,
-      APP_ENV: 'staging',
-      BETTER_AUTH_URL: 'https://api.staging.example.com',
-      SITE_URL: 'https://site.staging.example.com',
-      WEB_APP_URL: 'https://app.staging.example.com',
-      WORKSPACE_WEB_BASE_ORIGIN: 'https://app.staging.example.com',
+      APP_ENV: 'production',
+      BETTER_AUTH_URL: 'https://api.example.com',
+      SITE_URL: 'https://example.com',
+      WEB_APP_URL: 'https://app.example.com',
+      WORKSPACE_WEB_BASE_ORIGIN: 'https://example.com',
       WORKSPACE_READ_ENABLED: 'true',
       WORKSPACE_SWITCHING_ENABLED: 'true',
     }
-    expect(loadAuthConfig(environment).workspaceDeployment).toEqual({
-      baseHost: 'app.staging.example.com',
-      webOrigin: 'https://app.staging.example.com',
+    const config = loadAuthConfig(environment)
+    expect(config.workspaceDeployment).toEqual({
+      baseHost: 'example.com',
+      webOrigin: 'https://example.com',
     })
+    // The former generic Web host only redirects; it is not a credentialed origin.
+    expect(config.allowedOrigins).toEqual(['https://example.com'])
+    expect(loadAuthConfig({ ...environment, WEB_APP_URL: undefined }).allowedOrigins).toEqual([
+      'https://example.com',
+    ])
+    expect(
+      loadAuthConfig({
+        ...environment,
+        APP_ENV: 'staging',
+        SITE_URL: 'https://site-staging.example.com',
+        WORKSPACE_WEB_BASE_ORIGIN: 'https://staging.example.com',
+      }).workspaceDeployment,
+    ).toEqual({ baseHost: 'staging.example.com', webOrigin: 'https://staging.example.com' })
     for (const origin of [
-      'http://app.staging.example.com',
-      'https://app.other.example.com',
-      'https://app.staging.example.com:8443',
-      'https://user:password@app.staging.example.com',
-      'https://app.staging.example.com/path',
+      'http://example.com',
+      'https://example.com:8443',
+      'https://user:password@example.com',
+      'https://example.com/path',
+      'https://localhost',
+      'https://203.0.113.10',
     ]) {
       expect(() => loadAuthConfig({ ...environment, WORKSPACE_WEB_BASE_ORIGIN: origin })).toThrow()
     }
     expect(() => loadAuthConfig({ ...environment, WORKSPACE_WEB_BASE_ORIGIN: undefined })).toThrow()
-    expect(() =>
-      loadAuthConfig({ ...environment, SITE_URL: 'http://site.staging.example.com' }),
-    ).toThrow()
+    expect(() => loadAuthConfig({ ...environment, SITE_URL: 'http://example.com' })).toThrow()
+  })
+  it('hosts local workspaces under the loopback Web origin in development', () => {
+    expect(
+      loadAuthConfig({
+        ...validEnvironment,
+        WORKSPACE_WEB_BASE_ORIGIN: 'http://localhost:3000',
+        WORKSPACE_READ_ENABLED: 'true',
+        WORKSPACE_SWITCHING_ENABLED: 'true',
+      }).workspaceDeployment,
+    ).toEqual({ baseHost: 'localhost', webOrigin: 'http://localhost:3000' })
   })
   it('uses frontend URLs as the exact credentialed origins', () => {
     expect(loadAuthConfig(validEnvironment)).toEqual({

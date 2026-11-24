@@ -1,28 +1,25 @@
-import { isIP } from 'node:net'
 import { loadWorkspaceWebBaseOrigin } from '../../onboarding/runtimeConfig.js'
-import { workspaceSwitchingMode } from '../../workspaces/runtimeConfig.js'
+import { workspaceSwitchingEnabled } from '../../workspaces/runtimeConfig.js'
 import type { AuthConfig, WorkspaceDeploymentConfig } from '../types/authConfig.js'
 
 export function loadWorkspaceDeployment(
   environment: NodeJS.ProcessEnv,
-  origins: Pick<AuthConfig, 'baseURL' | 'siteURL' | 'webAppURL'>,
+  origins: Pick<AuthConfig, 'appEnv' | 'baseURL' | 'siteURL'>,
 ): WorkspaceDeploymentConfig | undefined {
-  if (workspaceSwitchingMode(environment) !== 'remote') return undefined
+  if (!workspaceSwitchingEnabled(environment)) return undefined
   const webOrigin = loadWorkspaceWebBaseOrigin(environment)
-  const web = new URL(webOrigin)
   if (
-    [origins.baseURL, origins.siteURL, origins.webAppURL].some(
+    origins.appEnv !== 'development' &&
+    [origins.baseURL, origins.siteURL, webOrigin].some(
       (origin) => new URL(origin).protocol !== 'https:',
-    ) ||
-    web.protocol !== 'https:' ||
-    web.port ||
-    webOrigin !== origins.webAppURL ||
-    isIP(web.hostname) ||
-    web.hostname.split('.').length < 3 ||
-    /(?:^|\.)(?:localhost|local|test|invalid)$/.test(web.hostname)
-  )
-    throw new Error(
-      'Remote workspace switching requires an exact HTTPS Web origin with an isolated subdomain cookie scope',
     )
-  return { baseHost: web.hostname, webOrigin }
+  )
+    throw new Error('Workspace hosting requires HTTPS Core, Site and Web origins')
+  return { baseHost: new URL(webOrigin).hostname, webOrigin }
+}
+
+export function workspaceOrigin(deployment: WorkspaceDeploymentConfig, slug: string) {
+  const url = new URL(deployment.webOrigin)
+  url.hostname = `${slug}.${deployment.baseHost}`
+  return url.origin
 }

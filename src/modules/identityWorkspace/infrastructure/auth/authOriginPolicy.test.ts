@@ -9,35 +9,74 @@ const config = loadAuthConfig({
   APP_ENV: 'staging',
   BETTER_AUTH_SECRET: 'remote-workspace-secret-at-least-32-characters',
   BETTER_AUTH_URL: 'https://api.staging.example.com',
-  SITE_URL: 'https://site.staging.example.com',
-  WEB_APP_URL: 'https://app.staging.example.com',
-  WORKSPACE_WEB_BASE_ORIGIN: 'https://app.staging.example.com',
+  SITE_URL: 'https://site-staging.example.com',
+  WEB_APP_URL: 'https://app-staging.example.com',
+  WORKSPACE_WEB_BASE_ORIGIN: 'https://staging.example.com',
   WORKSPACE_SWITCHING_ENABLED: 'true',
   WORKSPACE_READ_ENABLED: 'true',
   RESEND_API_KEY: 'no-external-delivery',
   RESEND_FROM_EMAIL: 'noreply@mailflow.invalid',
 })
 
-it('admits only the exact HTTPS base and a single DNS-safe tenant label in this environment', () => {
+it('admits only DNS-safe, unreserved workspace hosts under the environment base', () => {
   const allowed = createAuthOriginPolicy(config)
-  for (const origin of [config.siteURL, config.webAppURL, 'https://acme.app.staging.example.com'])
+  for (const origin of [config.siteURL, 'https://acme.staging.example.com'])
     expect(allowed(origin)).toBe(true)
   for (const origin of [
     'null',
-    'http://acme.app.staging.example.com',
-    'https://acme.app.staging.example.com:8443',
-    'https://acme.app.staging.example.com.attacker.com',
-    'https://a.b.app.staging.example.com',
-    'https://acme.app.production.example.com',
-    'https://user:pass@acme.app.staging.example.com',
-    'https://acme.app.staging.example.com/path',
-    'https://-acme.app.staging.example.com',
+    // Neither the bare base host nor the retired entry host is a workspace.
+    'https://staging.example.com',
+    'https://app-staging.example.com',
+    'https://www.staging.example.com',
+    'https://api.staging.example.com',
+    'https://app.staging.example.com',
+    'https://site-staging.staging.example.com',
+    'http://acme.staging.example.com',
+    'https://acme.staging.example.com:8443',
+    'https://acme.staging.example.com.attacker.com',
+    'https://a.b.staging.example.com',
+    'https://acme.production.example.com',
+    'https://user:pass@acme.staging.example.com',
+    'https://acme.staging.example.com/path',
+    'https://-acme.staging.example.com',
   ])
     expect(allowed(origin)).toBe(false)
 })
 
+it('never treats the landing page or sibling environments of a root base as workspaces', () => {
+  const root = loadAuthConfig({
+    APP_ENV: 'production',
+    BETTER_AUTH_SECRET: 'remote-workspace-secret-at-least-32-characters',
+    BETTER_AUTH_URL: 'https://api.example.com',
+    SITE_URL: 'https://example.com',
+    WORKSPACE_WEB_BASE_ORIGIN: 'https://example.com',
+    WORKSPACE_SWITCHING_ENABLED: 'true',
+    WORKSPACE_READ_ENABLED: 'true',
+    RESEND_API_KEY: 'no-external-delivery',
+    RESEND_FROM_EMAIL: 'noreply@mailflow.invalid',
+  })
+  const allowed = createAuthOriginPolicy(root)
+  expect(allowed('https://acme.example.com')).toBe(true)
+  // The landing stays an exact credentialed origin for onboarding, never a workspace match.
+  expect(allowed('https://example.com')).toBe(true)
+  for (const host of [
+    'www',
+    'api',
+    'app',
+    'app-dev',
+    'app-staging',
+    'site-dev',
+    'site-staging',
+    'api-dev',
+    'api-staging',
+    'dev',
+    'staging',
+  ])
+    expect(allowed(`https://${host}.example.com`)).toBe(false)
+})
+
 it('gives Better Auth only the validated request origin, without wildcard callback permissions', () => {
-  const tenant = 'https://acme.app.staging.example.com'
+  const tenant = 'https://acme.staging.example.com'
   const request = new Request(config.baseURL, { headers: { Origin: tenant } })
   expect(trustedAuthOrigins(config, request)).toEqual([...config.allowedOrigins, tenant])
   expect(
@@ -49,16 +88,13 @@ it('gives Better Auth only the validated request origin, without wildcard callba
   expect(trustedAuthOrigins(config)).toEqual(config.allowedOrigins)
 })
 
-it('uses Secure HttpOnly Lax cookies only under the environment Web base', () => {
+it('uses host-only Secure HttpOnly Lax cookies for every workspace host', () => {
   const options = createAuthOptions(
     config,
     async () => {},
     () => {},
   )
-  expect(options.advanced.crossSubDomainCookies).toEqual({
-    enabled: true,
-    domain: 'app.staging.example.com',
-  })
+  expect(options.advanced).not.toHaveProperty('crossSubDomainCookies')
   expect(options.advanced.useSecureCookies).toBe(true)
   expect(options.advanced.defaultCookieAttributes).toMatchObject({
     httpOnly: true,
@@ -66,6 +102,7 @@ it('uses Secure HttpOnly Lax cookies only under the environment Web base', () =>
     sameSite: 'lax',
     path: '/',
   })
+  expect(options.advanced.defaultCookieAttributes).not.toHaveProperty('domain')
 })
 
 const development = { ...config, appEnv: 'development' as const }
@@ -151,10 +188,10 @@ it('allows the workspace selector for trusted Mail preflight only', async () => 
         'Access-Control-Request-Headers': 'content-type,x-workspace-id,x-workspace-identity',
       },
     })
-  const accepted = await request('https://acme.app.staging.example.com')
+  const accepted = await request('https://acme.staging.example.com')
   expect(accepted.status).toBe(204)
   expect(accepted.headers.get('access-control-allow-origin')).toBe(
-    'https://acme.app.staging.example.com',
+    'https://acme.staging.example.com',
   )
   expect(accepted.headers.get('access-control-allow-credentials')).toBe('true')
   expect(

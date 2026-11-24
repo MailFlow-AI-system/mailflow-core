@@ -7,9 +7,7 @@ import { secureHeaders } from 'hono/secure-headers'
 
 import {
   createOnboardingRoutes,
-  createWorkspaceEntryRoutes,
   createWorkspaceRoutes,
-  createWorkspaceSelectionRoutes,
   installAuthRoutes,
 } from '#modules/identityWorkspace'
 import {
@@ -42,8 +40,6 @@ export function createApp({
   attachments,
   workspaces,
   onboarding,
-  workspaceSelection,
-  workspaceEntry,
   mailWorkspaceAuthority,
   mailWorkspaceBaseOrigin,
   observability = createNoopObservability('mailflow-core-api'),
@@ -114,8 +110,6 @@ export function createApp({
     )
   if (workspaces) app.route('/', createWorkspaceRoutes(workspaces.reader, workspaces.consumeBudget))
   if (onboarding) app.route('/', createOnboardingRoutes(onboarding))
-  if (workspaceSelection) app.route('/', createWorkspaceSelectionRoutes(workspaceSelection))
-  if (workspaceEntry) app.route('/', createWorkspaceEntryRoutes(workspaceEntry))
 
   if (config.apiDocsEnabled) {
     app.doc('/openapi.json', {

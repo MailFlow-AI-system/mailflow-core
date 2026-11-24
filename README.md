@@ -35,9 +35,34 @@ Sending and file access require valid workspace membership, even with workspace 
 
 [Architecture](https://mailflow-architecture-hub.vercel.app/) · [R2 setup](infrastructure/r2/README.md)
 
+## Workspace hosting
+
+Each workspace is served only from `{slug}.{host-base}`, where the host base is the exact
+`WORKSPACE_WEB_BASE_ORIGIN` (`https://mailflow-ai.online`, `https://staging.mailflow-ai.online`,
+`https://dev.mailflow-ai.online`, or `http://localhost:3000` locally). Enable it with
+`WORKSPACE_SWITCHING_ENABLED=true` and `WORKSPACE_READ_ENABLED=true`; `WEB_APP_URL` is then ignored.
+
+- Session cookies are host-only (no `Domain`). The Web Worker proxies `/api/auth/*`, so the
+  browser only talks to its own workspace host.
+- Trusted origins are the Site plus `{slug}.{host-base}` for DNS-safe slugs outside
+  [`RESERVED_WORKSPACE_SLUGS`](src/modules/identityWorkspace/onboarding/constants.ts). The bare
+  base host, the landing hosts and reserved names never match.
+- Switching uses a one-time handoff code. `POST /api/auth/workspace-handoff/issue`
+  (`{ workspaceId }`, signed in) returns `https://{slug}.{host-base}/auth/handoff?code=…`.
+  `POST /api/auth/workspace-handoff/exchange` (`{ code }`, public, `Origin` must be the target
+  host) creates a new session for that host. Codes have 256 bits, expire after 60 seconds, are
+  single-use, are stored only as SHA-256 and are never logged. Exchange is limited to 10 requests
+  per minute per client IP; issue to 20.
+- Password-reset and welcome emails link to the user's workspace host (the requesting host when
+  the user belongs to it), or to the Site when the user has no workspace.
+
+Migrations `0012`/`0013` add the handoff table and its two `SECURITY DEFINER` functions. After
+applying them, grant `EXECUTE` on `issue_workspace_handoff(text, text)` and
+`consume_workspace_handoff(text, text)` to the runtime role; startup fails closed otherwise.
+
 ## Local workspaces
 
-`bun run dev` selects `localhost:3000` and its tenant subdomains. The local runner verifies
+`bun run dev` hosts workspaces on `http://{slug}.localhost:3000`. The local runner verifies
 restricted privileges and the current schema first; it never migrates or grants automatically.
 Use `MAILFLOW_LOCAL_PROFILE=false` for an intentional custom profile. See the Web's local guide.
 Shared rollout must apply the current migrations before reviewing the disabled
@@ -134,3 +159,9 @@ through the existing Mail authority. Exact ID and slug selectors avoid name ambi
 none of the selectors falls back to the user's preferred workspace. Sample recipients use
 reserved, workspace-neutral addresses, while fixture IDs remain scoped to the selected
 workspace so reruns preserve existing data.
+
+Workspace switching once relied on a session cookie shared across `*.{host-base}`. That made
+every subdomain, including any future non-workspace host, able to read the session. Host-only
+cookies plus a one-time handoff keep each workspace's session on its own host. The handoff is a
+Better Auth plugin so the new session uses the same cookie attributes, signing and rate limiter
+as sign-in; the code travels in the URL only for one redirect and is consumed server-side.
