@@ -16,14 +16,14 @@ import type {
   IdentityWorkspaceRuntime,
   IdentityWorkspaceRuntimeDependencies,
 } from './runtimeTypes.js'
+import { createAccountWorkspaceResolver } from './workspaces/accountWorkspace.js'
 import { assertWorkspaceDatabaseRole } from './workspaces/databaseRole.js'
 import { createDiscoveryBudget } from './workspaces/discoveryBudget.js'
 import { createMailWorkspaceAuthority } from './workspaces/mailWorkspaceAuthority.js'
-import { workspaceReadsEnabled, workspaceSwitchingMode } from './workspaces/runtimeConfig.js'
+import { workspaceReadsEnabled, workspaceSwitchingEnabled } from './workspaces/runtimeConfig.js'
 import { assertWorkspaceSelectionDatabaseRole } from './workspaces/selectionDatabaseRole.js'
-import { createWorkspaceEntryReader } from './workspaces/workspaceEntryReader.js'
+import { createWorkspaceHandoffStore } from './workspaces/workspaceHandoff.js'
 import { createWorkspaceReader } from './workspaces/workspaceReader.js'
-import { createWorkspaceSelection } from './workspaces/workspaceSelection.js'
 
 export async function createIdentityWorkspaceRuntime({
   environment,
@@ -34,10 +34,9 @@ export async function createIdentityWorkspaceRuntime({
   reportEmailDeliveryFailure,
 }: IdentityWorkspaceRuntimeDependencies): Promise<IdentityWorkspaceRuntime> {
   const reads = workspaceReadsEnabled(environment)
-  const switchingMode = workspaceSwitchingMode(environment)
-  const selection = switchingMode !== 'disabled'
-  if (switchingMode === 'remote' && !authConfig.workspaceDeployment)
-    throw new Error('Remote workspace switching requires validated deployment auth configuration')
+  const selection = workspaceSwitchingEnabled(environment)
+  if (selection && !authConfig.workspaceDeployment)
+    throw new Error('Workspace switching requires validated workspace hosting configuration')
   const isAllowedOrigin = createAuthOriginPolicy(authConfig)
   const onboarding = onboardingEnabled(environment)
   const closeLegacySignup = signupCutoverEnabled(environment)
@@ -49,7 +48,12 @@ export async function createIdentityWorkspaceRuntime({
     ...(onboarding
       ? { otpStorage: createProtectedOtpStorage(createOnboardingCipher(authConfig.secret)) }
       : {}),
-    ...(switchingMode === 'local' ? { localWorkspaceCookie: true } : {}),
+    ...(selection
+      ? {
+          accountWorkspace: createAccountWorkspaceResolver(pool),
+          workspaceHandoff: createWorkspaceHandoffStore(pool),
+        }
+      : {}),
   })
   return {
     auth,
@@ -63,20 +67,6 @@ export async function createIdentityWorkspaceRuntime({
       ? {
           workspaces: {
             reader: createWorkspaceReader(pool),
-            consumeBudget: createDiscoveryBudget(pool),
-          },
-        }
-      : {}),
-    ...(selection
-      ? {
-          workspaceSelection: {
-            selection: createWorkspaceSelection(pool),
-            allowedOrigins: authConfig.allowedOrigins,
-            isAllowedOrigin,
-            consumeBudget: createDiscoveryBudget(pool),
-          },
-          workspaceEntry: {
-            reader: createWorkspaceEntryReader(pool),
             consumeBudget: createDiscoveryBudget(pool),
           },
         }

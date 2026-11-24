@@ -10,15 +10,16 @@ export function localDevelopmentEnvironment(
     environment.WORKERS_CI
   )
     throw new Error('The local runner cannot be used for a published environment')
+  // The local profile retires the shared entry host, like published workspace hosting.
+  const { WEB_APP_URL: _retiredEntryHost, ...rest } = environment
   return {
-    ...environment,
+    ...rest,
     APP_ENV: 'development',
     BETTER_AUTH_URL: `http://localhost:${environment.PORT ?? '8080'}`,
     SITE_URL: 'http://localhost:4321',
-    WEB_APP_URL: 'http://localhost:3000',
+    // Workspaces run on http://{slug}.localhost:3000; the bare host only redirects to the Site.
     WORKSPACE_WEB_BASE_ORIGIN: 'http://localhost:3000',
     WORKSPACE_READ_ENABLED: 'true',
-    WORKSPACE_LOCAL_SWITCHING_ENABLED: 'true',
-    WORKSPACE_SWITCHING_ENABLED: 'false',
+    WORKSPACE_SWITCHING_ENABLED: 'true',
   }
 }

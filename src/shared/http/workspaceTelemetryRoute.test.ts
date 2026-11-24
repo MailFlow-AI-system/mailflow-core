@@ -6,10 +6,14 @@ it('uses only finite route templates, never selectors or arbitrary workspace pat
   expect(workspaceTelemetryRoute('GET', '/api/v1/workspaces/private-tenant/context')).toBe(
     '/api/v1/workspaces/:slug/context',
   )
-  expect(workspaceTelemetryRoute('GET', '/api/v1/workspace-entry')).toBe('/api/v1/workspace-entry')
-  expect(workspaceTelemetryRoute('POST', '/api/v1/workspace-selection')).toBe(
-    '/api/v1/workspace-selection',
+  expect(workspaceTelemetryRoute('POST', '/api/auth/workspace-handoff/issue')).toBe(
+    '/api/auth/workspace-handoff/issue',
   )
+  expect(workspaceTelemetryRoute('POST', '/api/auth/workspace-handoff/exchange')).toBe(
+    '/api/auth/workspace-handoff/exchange',
+  )
+  expect(workspaceTelemetryRoute('GET', '/api/v1/workspace-entry')).toBeUndefined()
+  expect(workspaceTelemetryRoute('POST', '/api/v1/workspace-selection')).toBeUndefined()
   expect(
     workspaceTelemetryRoute('GET', '/api/v1/workspaces/private-tenant/members'),
   ).toBeUndefined()

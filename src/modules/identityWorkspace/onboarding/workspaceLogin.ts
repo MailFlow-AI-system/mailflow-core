@@ -5,6 +5,7 @@ export async function initialWorkspaceLogin(
   client: PoolClient,
   userId: string,
   baseOrigin: string,
+  fallbackUrl: string,
 ) {
   await client.query("select set_config('mailflow.user_id', $1, true)", [userId])
   const workspace = await client.query<WorkspaceSlugRow>(
@@ -13,7 +14,9 @@ export async function initialWorkspaceLogin(
     where m.user_id = $1 and m.role = 'owner' order by o.created_at, o.id limit 1`,
     [userId],
   )
+  // The bare base host serves no workspace, so an account without one goes to the Site.
+  if (!workspace.rows[0]) return fallbackUrl
   const url = new URL('/login', baseOrigin)
-  if (workspace.rows[0]) url.hostname = `${workspace.rows[0].slug}.${url.hostname}`
+  url.hostname = `${workspace.rows[0].slug}.${url.hostname}`
   return url.href
 }

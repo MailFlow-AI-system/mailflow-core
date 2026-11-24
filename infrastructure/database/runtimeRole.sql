@@ -17,5 +17,7 @@ GRANT USAGE ON SCHEMA identity_workspace, mail TO mailflow_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity_workspace, mail TO mailflow_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity_workspace, mail TO mailflow_runtime;
 GRANT EXECUTE ON FUNCTION identity_workspace.select_workspace_preference(text) TO mailflow_runtime;
+GRANT EXECUTE ON FUNCTION identity_workspace.issue_workspace_handoff(text, text) TO mailflow_runtime;
+GRANT EXECUTE ON FUNCTION identity_workspace.consume_workspace_handoff(text, text) TO mailflow_runtime;
 -- Repeat the grants after future migrations; do not grant membership in the schema-owner role.
 COMMIT;

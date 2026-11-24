@@ -19,8 +19,13 @@ import type {
   VerifiedAccountUser,
 } from '../types/authOptions.js'
 import type { AuthConfig } from './authConfig.js'
-import { createAuthOriginPolicy, trustedAuthOrigins } from './authOriginPolicy.js'
-import { localWorkspaceCookie } from './localWorkspaceCookie.js'
+import {
+  createAuthOriginPolicy,
+  trustedAuthOrigins,
+  workspaceSlugFromOrigin,
+} from './authOriginPolicy.js'
+import { workspaceOrigin } from './workspaceDeployment.js'
+import { workspaceHandoff } from './workspaceHandoffPlugin.js'
 
 const authSchema = {
   user: authUser,
@@ -63,6 +68,18 @@ export function createAuthOptions(
 ) {
   const failedPasswordResetRequests = new WeakMap<Request, string>()
   const isAllowedOrigin = createAuthOriginPolicy(config)
+  // Account emails open the user's workspace host; without one they open the landing page.
+  const accountLink = async (userId: string, path: string, request?: Request) => {
+    const deployment = config.workspaceDeployment
+    if (!deployment) return new URL(path, config.webAppURL ?? config.siteURL).href
+    const origin = request?.headers.get('origin')
+    const hostSlug =
+      origin && URL.canParse(origin)
+        ? workspaceSlugFromOrigin(deployment, new URL(origin))
+        : undefined
+    const slug = await provisioning.accountWorkspace?.(userId, hostSlug)
+    return slug ? new URL(path, workspaceOrigin(deployment, slug)).href : `${config.siteURL}/`
+  }
 
   return {
     disabledPaths: [
@@ -79,13 +96,16 @@ export function createAuthOptions(
       storage: 'database' as const,
       customRules: {
         '/request-password-reset': { window: 60, max: 3 },
+        '/workspace-handoff/issue': { window: 60, max: 20 },
+        '/workspace-handoff/exchange': { window: 60, max: 10 },
       },
     },
     advanced: {
-      ...(config.workspaceDeployment
+      // Session cookies stay host-only: each `{slug}.{base}` host holds its own session, and
+      // switching workspaces mints a new session through a one-time handoff code.
+      ...(config.workspaceDeployment?.webOrigin.startsWith('https:')
         ? {
             useSecureCookies: true,
-            crossSubDomainCookies: { enabled: true, domain: config.workspaceDeployment.baseHost },
             defaultCookieAttributes: {
               httpOnly: true,
               secure: true,
@@ -93,9 +113,6 @@ export function createAuthOptions(
               path: '/',
             },
           }
-        : {}),
-      ...(provisioning.localWorkspaceCookie
-        ? { crossSubDomainCookies: localWorkspaceCookie(config, true) }
         : {}),
       ipAddress: { ipAddressHeaders: ['x-real-ip'] },
       ...(provisioning.generateId ? { database: { generateId: provisioning.generateId } } : {}),
@@ -115,7 +132,13 @@ export function createAuthOptions(
             kind: 'password-reset',
             to: user.email,
             name: user.name,
-            url,
+            url: config.workspaceDeployment
+              ? await accountLink(
+                  user.id,
+                  `/reset-password?${new URLSearchParams({ token })}`,
+                  request,
+                )
+              : url,
           })
         } catch {
           if (request) failedPasswordResetRequests.set(request, `reset-password:${token}`)
@@ -139,7 +162,7 @@ export function createAuthOptions(
           to: user.email,
           name: user.name,
           userId: user.id,
-          loginUrl: `${config.webAppURL}/login`,
+          loginUrl: await accountLink(user.id, '/login').catch(() => `${config.siteURL}/`),
         }
 
         try {
@@ -155,6 +178,9 @@ export function createAuthOptions(
       },
     },
     plugins: [
+      ...(config.workspaceDeployment && provisioning.workspaceHandoff
+        ? [workspaceHandoff(config.workspaceDeployment, provisioning.workspaceHandoff)]
+        : []),
       organization({ allowUserToCreateOrganization: false, disableOrganizationDeletion: true }),
       emailOTP({
         ...(provisioning.otpStorage ? { storeOTP: provisioning.otpStorage } : {}),

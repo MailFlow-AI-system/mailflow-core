@@ -26,9 +26,28 @@ it('keeps rollout dark by default and rejects unsafe or incomplete cutover confi
     'https://workspace.test?x=1',
     'https://*.workspace.test',
     'https://127.0.0.1',
+    'https://localhost',
+    'https://online',
   ]) {
     expect(() =>
       loadWorkspaceWebBaseOrigin({ APP_ENV: 'staging', WORKSPACE_WEB_BASE_ORIGIN }),
     ).toThrow()
   }
+})
+
+it('accepts two-label and nested environment base hosts', () => {
+  for (const origin of [
+    'https://mailflow-ai.online',
+    'https://staging.mailflow-ai.online',
+    'https://dev.mailflow-ai.online',
+  ])
+    expect(
+      loadWorkspaceWebBaseOrigin({ APP_ENV: 'production', WORKSPACE_WEB_BASE_ORIGIN: origin }),
+    ).toBe(origin)
+  expect(
+    loadWorkspaceWebBaseOrigin({
+      APP_ENV: 'development',
+      WORKSPACE_WEB_BASE_ORIGIN: 'http://localhost:3000',
+    }),
+  ).toBe('http://localhost:3000')
 })

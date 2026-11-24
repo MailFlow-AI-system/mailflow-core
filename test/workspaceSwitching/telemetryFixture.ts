@@ -12,7 +12,7 @@ const recordSchema = z.object({
   spanId: z.string().regex(/^[a-f0-9]{16}$/),
   status: z.number().int(),
   route: z.string(),
-  'mailflow.workspace.operation': z.enum(['list', 'context', 'entry', 'selection']),
+  'mailflow.workspace.operation': z.enum(['list', 'context', 'handoff_issue', 'handoff_exchange']),
   'mailflow.workspace.result': z.enum([
     'success',
     'denied',

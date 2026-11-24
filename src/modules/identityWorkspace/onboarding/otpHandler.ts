@@ -73,7 +73,15 @@ export function createOnboardingOtpHandler(
           await client.query("select set_config('mailflow.user_id', $1, true)", [userId])
           const payload =
             message.kind === 'verified-welcome'
-              ? { ...message, loginUrl: await initialWorkspaceLogin(client, userId, webBaseOrigin) }
+              ? {
+                  ...message,
+                  loginUrl: await initialWorkspaceLogin(
+                    client,
+                    userId,
+                    webBaseOrigin,
+                    `${config.siteURL}/`,
+                  ),
+                }
               : message
           await enqueueFactory(client, userId, cipher)(payload)
         } catch {
@@ -104,7 +112,12 @@ export function createOnboardingOtpHandler(
       const body = await response.clone().json()
       const result = verifiedResponse.safeParse(body)
       if (!result.success) throw new Error('Unexpected verification result')
-      const loginUrl = await initialWorkspaceLogin(client, result.data.user.id, webBaseOrigin)
+      const loginUrl = await initialWorkspaceLogin(
+        client,
+        result.data.user.id,
+        webBaseOrigin,
+        `${config.siteURL}/`,
+      )
       return Response.json(
         { ...body, loginUrl },
         { status: response.status, headers: response.headers },
