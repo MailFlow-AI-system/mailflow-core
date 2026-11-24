@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadAuthConfig } from '../infrastructure/auth/authConfig.js'
+import { RESOLVED_CLIENT_IP_HEADER } from '../infrastructure/auth/clientIp.js'
 import { createAuth } from '../infrastructure/auth/createAuth.js'
 import { testClientIp } from '../onboarding/utils/testClientIp.test-support.js'
 import { createAccountWorkspaceResolver } from './accountWorkspace.js'
@@ -49,7 +50,7 @@ describe('workspace handoff with real PostgreSQL privileges', () => {
         headers: {
           'Content-Type': 'application/json',
           Origin: from,
-          'x-real-ip': ip,
+          [RESOLVED_CLIENT_IP_HEADER]: ip,
           ...(cookie ? { Cookie: cookie } : {}),
         },
         body: JSON.stringify(body),

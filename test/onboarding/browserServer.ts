@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import pino from 'pino'
 import { createApp } from '../../src/app.js'
 import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
+import { RESOLVED_CLIENT_IP_HEADER } from '../../src/modules/identityWorkspace/infrastructure/auth/clientIp.js'
 import { createOnboardingDispatcher } from '../../src/modules/identityWorkspace/onboarding/dispatcher.js'
 import type { IdentityRow } from '../../src/modules/identityWorkspace/onboarding/types.js'
 import { createOnboardingCipher } from '../../src/modules/identityWorkspace/onboarding/utils/cipher.js'
@@ -42,7 +43,7 @@ const clientIps = new Map(
 function withFixtureClientIp(request: Request) {
   const headers = new Headers(request.headers)
   const ip = clientIps.get(headers.get('Origin') ?? '')
-  if (ip) headers.set('x-real-ip', ip)
+  if (ip) headers.set(RESOLVED_CLIENT_IP_HEADER, ip)
   return new Request(request, { headers })
 }
 const captured = new Map<string, CapturedOnboardingEmail[]>()

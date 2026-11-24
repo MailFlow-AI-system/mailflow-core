@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { createApp } from '../../src/app.js'
 import { createIdentityWorkspaceRuntime } from '../../src/modules/identityWorkspace/index.js'
+import { RESOLVED_CLIENT_IP_HEADER } from '../../src/modules/identityWorkspace/infrastructure/auth/clientIp.js'
 import { testClientIp } from '../../src/modules/identityWorkspace/onboarding/utils/testClientIp.test-support.js'
 import { createWorkspaceTestFixture } from '../../src/modules/identityWorkspace/workspaces/fixtures.test-support.js'
 import type { DiscoveryBudget } from '../../src/modules/identityWorkspace/workspaces/types.js'
@@ -144,7 +145,7 @@ const app = createApp({
     // Keep Better Auth rate limiting enabled; never trust a browser-supplied IP.
     handler: (request) => {
       const headers = new Headers(request.headers)
-      headers.set('x-real-ip', clientIp)
+      headers.set(RESOLVED_CLIENT_IP_HEADER, clientIp)
       return auth.handler(new Request(request, { headers }))
     },
   },

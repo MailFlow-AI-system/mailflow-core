@@ -14,6 +14,10 @@ const rawConfigSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
   OTEL_TRACE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   OTEL_SERVICE_INSTANCE_ID: z.string().min(1).optional(),
+  MAILFLOW_PROXY_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32).optional(),
+  ),
 })
 
 export type AppConfig = {
@@ -27,6 +31,7 @@ export type AppConfig = {
   otlpEndpoint: string | undefined
   otelTraceSampleRate: number
   serviceInstanceId: string
+  proxySecret?: string
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
@@ -46,5 +51,6 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
     otlpEndpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelTraceSampleRate: config.OTEL_TRACE_SAMPLE_RATE,
     serviceInstanceId: config.OTEL_SERVICE_INSTANCE_ID ?? `${hostname()}-${process.pid}`,
+    ...(config.MAILFLOW_PROXY_SECRET ? { proxySecret: config.MAILFLOW_PROXY_SECRET } : {}),
   }
 }

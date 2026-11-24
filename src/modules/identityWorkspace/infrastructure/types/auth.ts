@@ -15,6 +15,8 @@ export type AuthRouteDependencies = {
   allowedOrigins: string[]
   isAllowedOrigin?: AuthOriginPolicy
   onboarding?: { handleOtp: (request: Request) => Promise<Response>; closeLegacySignup?: boolean }
+  /** Shared secret proving a forwarded client IP came from the MailFlow Web Worker. */
+  proxySecret?: string
 }
 
 import type { AuthOriginPolicy } from './authConfig.js'

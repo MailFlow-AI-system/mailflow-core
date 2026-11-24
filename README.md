@@ -60,6 +60,24 @@ Migrations `0012`/`0013` add the handoff table and its two `SECURITY DEFINER` fu
 applying them, grant `EXECUTE` on `issue_workspace_handoff(text, text)` and
 `consume_workspace_handoff(text, text)` to the runtime role; startup fails closed otherwise.
 
+## Client IP for rate limiting
+
+Better Auth rate limits `/api/auth/*` (login, handoff issue and exchange, password reset) per
+client IP. A middleware resolves that IP into the internal `x-mailflow-resolved-client-ip` header,
+in this order:
+
+1. `X-MailFlow-Client-IP`, only when `X-MailFlow-Proxy-Secret` matches `MAILFLOW_PROXY_SECRET`.
+   The Web Worker sends both from the browser's `CF-Connecting-IP`.
+2. `CF-Connecting-IP` (direct Site calls proxied by Cloudflare).
+3. `x-real-ip`.
+
+Incoming copies of these internal headers are always stripped, and values must be valid IPv4 or
+IPv6 addresses. `MAILFLOW_PROXY_SECRET` is optional (at least 32 characters; empty means unset) and
+must have the same value in the Web Worker (secret) and the Core API (Railway) of each environment.
+Generate it with `openssl rand -base64 48`. Without it, Core ignores the forwarded header. Residual
+risk: a direct call to the Railway origin with a forged `CF-Connecting-IP` only bypasses per-IP rate
+limiting, not authentication.
+
 ## Local workspaces
 
 `bun run dev` hosts workspaces on `http://{slug}.localhost:3000`. The local runner verifies
